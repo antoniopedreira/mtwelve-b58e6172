@@ -29,6 +29,29 @@ export function useActiveContracts() {
   });
 }
 
+export function useCompletedContracts() {
+  return useQuery({
+    queryKey: ["contracts", "completed"],
+    queryFn: async (): Promise<ContractWithClient[]> => {
+      const { data, error } = await supabase
+        .from("contracts")
+        .select(`
+          *,
+          clients (
+            name,
+            school,
+            avatar_url
+          )
+        `)
+        .eq("status", "completed")
+        .order("updated_at", { ascending: false });
+
+      if (error) throw error;
+      return data as ContractWithClient[];
+    },
+  });
+}
+
 export function useContractProgress(contractId: string) {
   return useQuery({
     queryKey: ["contract-progress", contractId],
