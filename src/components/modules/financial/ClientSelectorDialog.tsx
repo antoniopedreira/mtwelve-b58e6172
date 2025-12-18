@@ -100,20 +100,20 @@ export function ClientSelectorDialog({
                 <p className="text-sm">Nenhum atleta encontrado</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2 pr-2">
                 {filteredClients.map((client) => (
                   <button
                     key={client.id}
                     onClick={() => onSelectClient(client)}
                     className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left group"
                   >
-                    <Avatar className="h-10 w-10">
+                    <Avatar className="h-10 w-10 shrink-0">
                       <AvatarImage src={client.avatar_url || undefined} />
                       <AvatarFallback className="bg-primary/10 text-primary">
                         {getInitials(client.name)}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <p className="font-medium truncate group-hover:text-primary transition-colors">
                         {client.name}
                       </p>
@@ -121,7 +121,7 @@ export function ClientSelectorDialog({
                         {client.school || "Sem clube definido"}
                       </p>
                     </div>
-                    <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground capitalize">
+                    <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground capitalize shrink-0">
                       {client.stage}
                     </span>
                   </button>
