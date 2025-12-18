@@ -1,35 +1,34 @@
-import { useState } from 'react';
-import { Plus, FileText } from 'lucide-react';
-import { TransactionsTable } from '@/components/modules/financial/TransactionsTable';
-import { ContractBuilder } from '@/components/modules/financial/ContractBuilder';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
+import { useState } from "react";
+import { Plus, FileText } from "lucide-react";
+import { TransactionsTable } from "@/components/modules/financial/TransactionsTable";
+import { ContractBuilder } from "@/components/modules/financial/ContractBuilder";
+import { NewExpenseDialog } from "@/components/modules/financial/NewExpenseDialog"; // Importação nova
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Financeiro() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const { toast } = useToast();
 
-  const handleSaveContract = (data: {
-    totalValue: number;
-    installments: any[];
-    commissions: any[];
-  }) => {
-    // TODO: Supabase Integration - Save contract to database
-    console.log('Contract data:', data);
-    
+  const handleSaveContract = (data: { totalValue: number; installments: any[]; commissions: any[] }) => {
+    // TODO: Integração real via Supabase no ContractBuilder será feita depois
+    console.log("Contract data:", data);
+
     toast({
-      title: 'Contrato Salvo!',
-      description: 'O contrato foi cadastrado com sucesso.',
+      title: "Contrato Salvo!",
+      description: "O contrato foi cadastrado com sucesso.",
     });
-    
+
     setIsContractModalOpen(false);
+  };
+
+  // Função callback para recarregar dados quando uma despesa for salva
+  const handleDataRefresh = () => {
+    // Futuramente aqui você chamará o refetch do TanStack Query
+    // ex: queryClient.invalidateQueries(['financial_overview'])
+    console.log("Recarregando dados do dashboard...");
   };
 
   return (
@@ -38,27 +37,30 @@ export default function Financeiro() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Financeiro</h1>
-          <p className="text-muted-foreground mt-1">
-            Controle de contratos e transações
-          </p>
+          <p className="text-muted-foreground mt-1">Controle de contratos, despesas e fluxo de caixa.</p>
         </div>
-        <Button 
-          className="gold-gradient text-primary-foreground"
-          onClick={() => setIsContractModalOpen(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Novo Contrato
-        </Button>
+
+        {/* Área de Ações (Botões) */}
+        <div className="flex items-center gap-3">
+          {/* Botão de Despesa (Vermelho) */}
+          <NewExpenseDialog onSuccess={handleDataRefresh} />
+
+          {/* Botão de Contrato (Dourado) */}
+          <Button className="gold-gradient text-primary-foreground" onClick={() => setIsContractModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Novo Contrato
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="transactions" className="space-y-6">
         <TabsList className="bg-muted/50">
           <TabsTrigger value="transactions" className="data-[state=active]:bg-card">
-            Transações
+            Fluxo de Caixa
           </TabsTrigger>
           <TabsTrigger value="contracts" className="data-[state=active]:bg-card">
-            Contratos
+            Contratos Ativos
           </TabsTrigger>
         </TabsList>
 
@@ -68,15 +70,13 @@ export default function Financeiro() {
 
         <TabsContent value="contracts" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Contract Card Example */}
+            {/* Exemplo de Card de Contrato */}
             <div className="p-5 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-colors group">
               <div className="flex items-start justify-between mb-4">
                 <div className="p-2 rounded-lg bg-primary/10 text-primary">
                   <FileText className="w-5 h-5" />
                 </div>
-                <span className="px-2 py-1 rounded-full text-xs font-medium bg-success/10 text-success">
-                  Ativo
-                </span>
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-success/10 text-success">Ativo</span>
               </div>
               <h3 className="font-semibold mb-1">André Costa</h3>
               <p className="text-sm text-muted-foreground mb-3">Futebol • Zagueiro</p>
@@ -90,13 +90,13 @@ export default function Financeiro() {
               </div>
               <div className="mt-4 pt-4 border-t border-border/50">
                 <div className="w-full bg-muted rounded-full h-1.5">
-                  <div className="bg-primary h-1.5 rounded-full" style={{ width: '33%' }} />
+                  <div className="bg-primary h-1.5 rounded-full" style={{ width: "33%" }} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-2 text-right">33% concluído</p>
               </div>
             </div>
 
-            {/* Add Contract Card */}
+            {/* Card para Adicionar Novo Contrato */}
             <button
               onClick={() => setIsContractModalOpen(true)}
               className="p-5 rounded-xl border-2 border-dashed border-border/50 hover:border-primary/50 transition-colors flex flex-col items-center justify-center min-h-[200px] text-muted-foreground hover:text-primary"
@@ -108,18 +108,15 @@ export default function Financeiro() {
         </TabsContent>
       </Tabs>
 
-      {/* Contract Modal */}
+      {/* Modal de Novo Contrato */}
       <Dialog open={isContractModalOpen} onOpenChange={setIsContractModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border">
           <DialogHeader>
             <DialogTitle className="text-xl">
               <span className="gold-text">Novo Contrato</span>
             </DialogTitle>
           </DialogHeader>
-          <ContractBuilder
-            onSave={handleSaveContract}
-            onCancel={() => setIsContractModalOpen(false)}
-          />
+          <ContractBuilder onSave={handleSaveContract} onCancel={() => setIsContractModalOpen(false)} />
         </DialogContent>
       </Dialog>
     </div>
