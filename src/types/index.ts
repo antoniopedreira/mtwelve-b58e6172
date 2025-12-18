@@ -1,82 +1,51 @@
-// MTwelve Sports Manager - Core Types
+export type PipelineStage = "radar" | "contato" | "negociacao" | "fechado" | "perdido";
+
+export type ContractStatus = "draft" | "active" | "completed" | "cancelled";
+
+export type TransactionStatus = "pending" | "paid" | "overdue" | "cancelled";
+
+export type TransactionType = "income" | "expense";
 
 export interface Client {
   id: string;
   name: string;
-  email: string;
-  phone: string;
-  sport: string;
-  position?: string;
-  team?: string;
-  avatarUrl?: string;
-  status: PipelineStage;
-  createdAt: Date;
-  updatedAt: Date;
-}
+  email: string | null;
+  phone: string | null;
 
-export type PipelineStage = 'radar' | 'contato' | 'negociacao' | 'fechado' | 'perdido';
+  // Novos campos atualizados
+  school: string | null;
+  nationality: string | null;
 
-export interface PipelineColumn {
-  id: PipelineStage;
-  title: string;
-  clients: Client[];
+  // Campos do Banco de Dados (snake_case)
+  stage: PipelineStage;
+  value: number | null;
+  avatar_url: string | null;
+  notes: string | null;
+
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Contract {
   id: string;
-  clientId: string;
-  clientName: string;
-  totalValue: number;
-  installments: Installment[];
-  commissions: Commission[];
-  status: 'draft' | 'active' | 'completed' | 'cancelled';
-  createdAt: Date;
-  startDate: Date;
-  endDate: Date;
-}
-
-export interface Installment {
-  id: string;
-  contractId: string;
-  value: number;
-  dueDate: Date;
-  paidAt?: Date;
-  status: 'pending' | 'paid' | 'overdue';
-}
-
-export interface Commission {
-  id: string;
-  contractId: string;
-  employeeId: string;
-  employeeName: string;
-  percentage: number;
-  value: number;
+  client_id: string;
+  total_value: number;
+  status: ContractStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  // Join opcional
+  clients?: Client;
 }
 
 export interface Transaction {
   id: string;
-  contractId: string;
-  clientName: string;
-  type: 'income' | 'expense';
-  category: string;
-  value: number;
-  date: Date;
+  contract_id: string | null;
+  type: TransactionType;
   description: string;
-  status: 'pending' | 'completed' | 'cancelled';
-}
-
-export interface Employee {
-  id: string;
-  name: string;
-  role: string;
-  email: string;
-}
-
-export interface KPIData {
-  monthlyRevenue: number;
-  burnRate: number;
-  profit: number;
-  activeClients: number;
-  pendingDeals: number;
-  closedDeals: number;
+  value: number;
+  due_date: string;
+  status: TransactionStatus;
+  created_at: string;
+  updated_at: string;
 }
