@@ -63,6 +63,7 @@ export interface Installment {
 export interface Commission {
   id: string;
   contract_id: string;
+  installment_id: string | null;
   employee_name: string;
   percentage: number;
   value: number;
