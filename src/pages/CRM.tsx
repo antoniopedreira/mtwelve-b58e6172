@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { PipelineBoard } from '@/components/modules/crm/PipelineBoard';
 import { ContractBuilder } from '@/components/modules/financial/ContractBuilder';
-import { Client } from '@/types';
+import { ClientRow } from '@/hooks/useClients';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,10 +14,10 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function CRM() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | undefined>();
+  const [selectedClient, setSelectedClient] = useState<ClientRow | undefined>();
   const { toast } = useToast();
 
-  const handleClientMoveToFechado = (client: Client) => {
+  const handleClientMoveToFechado = (client: ClientRow) => {
     setSelectedClient(client);
     setIsContractModalOpen(true);
   };
@@ -67,7 +67,7 @@ export default function CRM() {
             </DialogTitle>
           </DialogHeader>
           <ContractBuilder
-            client={selectedClient}
+            client={selectedClient ? { id: selectedClient.id, name: selectedClient.name } : undefined}
             onSave={handleSaveContract}
             onCancel={() => {
               setIsContractModalOpen(false);

@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { Transaction } from '@/types';
-import { mockTransactions } from '@/data/mockData';
+import { ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
+import { useTransactions, TransactionRow } from '@/hooks/useTransactions';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -21,22 +20,23 @@ const months = [
 export function TransactionsTable() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const { data: transactions, isLoading, error } = useTransactions();
 
   const filteredTransactions = useMemo(() => {
-    // TODO: Supabase Integration - Fetch transactions from database
-    return mockTransactions.filter((t) => {
-      const date = new Date(t.date);
+    if (!transactions) return [];
+    return transactions.filter((t) => {
+      const date = new Date(t.due_date);
       return date.getMonth() === selectedMonth && date.getFullYear() === selectedYear;
     });
-  }, [selectedMonth, selectedYear]);
+  }, [transactions, selectedMonth, selectedYear]);
 
   const totals = useMemo(() => {
     const income = filteredTransactions
       .filter((t) => t.type === 'income')
-      .reduce((sum, t) => sum + t.value, 0);
+      .reduce((sum, t) => sum + Number(t.value), 0);
     const expense = filteredTransactions
       .filter((t) => t.type === 'expense')
-      .reduce((sum, t) => sum + t.value, 0);
+      .reduce((sum, t) => sum + Number(t.value), 0);
     return { income, expense, balance: income - expense };
   }, [filteredTransactions]);
 
@@ -47,7 +47,7 @@ export function TransactionsTable() {
     }).format(value);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: string) => {
     return new Intl.DateTimeFormat('pt-BR').format(new Date(date));
   };
 
@@ -68,6 +68,32 @@ export function TransactionsTable() {
       setSelectedMonth(selectedMonth + 1);
     }
   };
+
+  const getStatusLabel = (status: TransactionRow['status']) => {
+    switch (status) {
+      case 'paid': return 'Pago';
+      case 'pending': return 'Pendente';
+      case 'overdue': return 'Atrasado';
+      case 'cancelled': return 'Cancelado';
+      default: return status;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[300px]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[300px] text-destructive">
+        Erro ao carregar transações
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -109,8 +135,6 @@ export function TransactionsTable() {
             <TableRow className="bg-muted/30 hover:bg-muted/30">
               <TableHead className="w-[100px]">Tipo</TableHead>
               <TableHead>Descrição</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Categoria</TableHead>
               <TableHead>Data</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead className="w-[100px]">Status</TableHead>
@@ -119,7 +143,7 @@ export function TransactionsTable() {
           <TableBody>
             {filteredTransactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                   Nenhuma transação encontrada para este período
                 </TableCell>
               </TableRow>
@@ -139,31 +163,24 @@ export function TransactionsTable() {
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">{transaction.description}</TableCell>
-                  <TableCell className="text-muted-foreground">{transaction.clientName}</TableCell>
-                  <TableCell>
-                    <span className="px-2 py-1 rounded-md bg-muted text-xs">
-                      {transaction.category}
-                    </span>
-                  </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDate(transaction.date)}
+                    {formatDate(transaction.due_date)}
                   </TableCell>
                   <TableCell className={cn(
                     'text-right font-semibold',
                     transaction.type === 'income' ? 'text-success' : 'text-destructive'
                   )}>
-                    {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.value)}
+                    {transaction.type === 'income' ? '+' : '-'}{formatCurrency(Number(transaction.value))}
                   </TableCell>
                   <TableCell>
                     <span className={cn(
                       'px-2 py-1 rounded-full text-xs font-medium',
-                      transaction.status === 'completed' && 'bg-success/10 text-success',
+                      transaction.status === 'paid' && 'bg-success/10 text-success',
                       transaction.status === 'pending' && 'bg-warning/10 text-warning',
-                      transaction.status === 'cancelled' && 'bg-destructive/10 text-destructive'
+                      transaction.status === 'overdue' && 'bg-destructive/10 text-destructive',
+                      transaction.status === 'cancelled' && 'bg-muted text-muted-foreground'
                     )}>
-                      {transaction.status === 'completed' && 'Concluído'}
-                      {transaction.status === 'pending' && 'Pendente'}
-                      {transaction.status === 'cancelled' && 'Cancelado'}
+                      {getStatusLabel(transaction.status)}
                     </span>
                   </TableCell>
                 </TableRow>

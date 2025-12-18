@@ -4,12 +4,15 @@ import {
   DollarSign, 
   Users, 
   Target, 
-  CheckCircle 
+  CheckCircle,
+  Loader2
 } from 'lucide-react';
 import { KPICard } from '@/components/modules/dashboard/KPICard';
-import { mockKPIData } from '@/data/mockData';
+import { useKPIData } from '@/hooks/useKPIData';
 
 export default function Dashboard() {
+  const { data: kpiData, isLoading, error } = useKPIData();
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -18,6 +21,22 @@ export default function Dashboard() {
       maximumFractionDigits: 0,
     }).format(value);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[400px] text-destructive">
+        Erro ao carregar dados
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -33,42 +52,40 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <KPICard
           title="Receita Mensal"
-          value={formatCurrency(mockKPIData.monthlyRevenue)}
+          value={formatCurrency(kpiData?.monthlyRevenue || 0)}
           icon={DollarSign}
           variant="primary"
-          trend={{ value: 12.5, isPositive: true }}
         />
         <KPICard
           title="Burn Rate"
-          value={formatCurrency(mockKPIData.burnRate)}
+          value={formatCurrency(kpiData?.burnRate || 0)}
           subtitle="Despesas operacionais"
           icon={TrendingDown}
           variant="warning"
         />
         <KPICard
           title="Lucro"
-          value={formatCurrency(mockKPIData.profit)}
+          value={formatCurrency(kpiData?.profit || 0)}
           icon={TrendingUp}
           variant="success"
-          trend={{ value: 8.3, isPositive: true }}
         />
         <KPICard
           title="Clientes Ativos"
-          value={mockKPIData.activeClients.toString()}
+          value={(kpiData?.activeClients || 0).toString()}
           subtitle="No pipeline"
           icon={Users}
           variant="default"
         />
         <KPICard
           title="Negociações Pendentes"
-          value={mockKPIData.pendingDeals.toString()}
+          value={(kpiData?.pendingDeals || 0).toString()}
           subtitle="Em andamento"
           icon={Target}
           variant="default"
         />
         <KPICard
           title="Deals Fechados"
-          value={mockKPIData.closedDeals.toString()}
+          value={(kpiData?.closedDeals || 0).toString()}
           subtitle="Este mês"
           icon={CheckCircle}
           variant="default"
@@ -79,44 +96,15 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="p-6 rounded-xl bg-card border border-border/50">
           <h2 className="font-semibold text-lg mb-4">Atividade Recente</h2>
-          <div className="space-y-4">
-            {[
-              { action: 'Novo cliente adicionado', client: 'Lucas Silva', time: 'Há 2 horas' },
-              { action: 'Contrato fechado', client: 'André Costa', time: 'Há 5 horas' },
-              { action: 'Pagamento recebido', client: 'André Costa', time: 'Ontem' },
-            ].map((item, index) => (
-              <div 
-                key={index} 
-                className="flex items-center justify-between py-3 border-b border-border/50 last:border-0"
-              >
-                <div>
-                  <p className="font-medium text-sm">{item.action}</p>
-                  <p className="text-xs text-muted-foreground">{item.client}</p>
-                </div>
-                <span className="text-xs text-muted-foreground">{item.time}</span>
-              </div>
-            ))}
+          <div className="text-center py-8 text-muted-foreground">
+            Nenhuma atividade recente
           </div>
         </div>
 
         <div className="p-6 rounded-xl bg-card border border-border/50">
           <h2 className="font-semibold text-lg mb-4">Próximos Vencimentos</h2>
-          <div className="space-y-4">
-            {[
-              { description: 'Parcela 2/3 - André Costa', value: 'R$ 166.666', date: '01/03/2024' },
-              { description: 'Parcela 3/3 - André Costa', value: 'R$ 166.666', date: '01/04/2024' },
-            ].map((item, index) => (
-              <div 
-                key={index} 
-                className="flex items-center justify-between py-3 border-b border-border/50 last:border-0"
-              >
-                <div>
-                  <p className="font-medium text-sm">{item.description}</p>
-                  <p className="text-xs text-primary">{item.value}</p>
-                </div>
-                <span className="text-xs text-muted-foreground">{item.date}</span>
-              </div>
-            ))}
+          <div className="text-center py-8 text-muted-foreground">
+            Nenhum vencimento próximo
           </div>
         </div>
       </div>

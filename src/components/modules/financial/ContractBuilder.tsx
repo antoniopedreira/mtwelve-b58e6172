@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, AlertCircle, CheckCircle, UserPlus } from 'lucide-react';
-import { Client, Installment, Commission } from '@/types';
-import { mockEmployees } from '@/data/mockData';
+import { Plus, Trash2, AlertCircle, CheckCircle, UserPlus, Loader2 } from 'lucide-react';
+import { Installment, Commission } from '@/types';
+import { useEmployees } from '@/hooks/useEmployees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,7 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 
 interface ContractBuilderProps {
-  client?: Client;
+  client?: { id: string; name: string };
   onSave: (data: {
     totalValue: number;
     installments: Omit<Installment, 'id' | 'contractId'>[];
@@ -25,6 +25,7 @@ interface ContractBuilderProps {
 }
 
 export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderProps) {
+  const { data: employees, isLoading: employeesLoading } = useEmployees();
   const [totalValue, setTotalValue] = useState<number>(0);
   const [installments, setInstallments] = useState<Array<{
     value: number;
@@ -80,7 +81,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   };
 
   const updateCommission = (index: number, employeeId: string) => {
-    const employee = mockEmployees.find((e) => e.id === employeeId);
+    const employee = employees?.find((e) => e.id === employeeId);
     if (employee) {
       const updated = [...commissions];
       updated[index] = { ...updated[index], employeeId, employeeName: employee.name };
@@ -95,7 +96,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   };
 
   const handleSave = () => {
-    // TODO: Supabase Integration - Save contract to database
     onSave({
       totalValue,
       installments: installments.map((inst) => ({
@@ -121,7 +121,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
         <div className="p-4 rounded-lg bg-surface border border-border/50">
           <p className="text-sm text-muted-foreground">Cliente</p>
           <p className="font-semibold text-lg">{client.name}</p>
-          <p className="text-sm text-primary">{client.sport} • {client.position}</p>
         </div>
       )}
 
@@ -236,11 +235,17 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                       <SelectValue placeholder="Funcionário" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockEmployees.map((emp) => (
-                        <SelectItem key={emp.id} value={emp.id}>
-                          {emp.name}
-                        </SelectItem>
-                      ))}
+                      {employeesLoading ? (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        </div>
+                      ) : (
+                        employees?.map((emp) => (
+                          <SelectItem key={emp.id} value={emp.id}>
+                            {emp.name}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                   <div className="relative">
