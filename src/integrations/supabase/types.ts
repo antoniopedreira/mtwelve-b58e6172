@@ -65,6 +65,7 @@ export type Database = {
           created_at: string
           employee_name: string
           id: string
+          installment_id: string | null
           percentage: number
           value: number
         }
@@ -73,6 +74,7 @@ export type Database = {
           created_at?: string
           employee_name: string
           id?: string
+          installment_id?: string | null
           percentage: number
           value: number
         }
@@ -81,6 +83,7 @@ export type Database = {
           created_at?: string
           employee_name?: string
           id?: string
+          installment_id?: string | null
           percentage?: number
           value?: number
         }
@@ -90,6 +93,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissions_installment_id_fkey"
+            columns: ["installment_id"]
+            isOneToOne: false
+            referencedRelation: "installments"
             referencedColumns: ["id"]
           },
         ]
