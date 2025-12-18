@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Plus, Search, Globe } from "lucide-react";
+import { Search, Globe } from "lucide-react";
 import { PipelineBoard } from "@/components/modules/crm/PipelineBoard";
+import { NewClientDialog } from "@/components/modules/crm/NewClientDialog"; // Importe o novo modal
 import { ContractBuilder } from "@/components/modules/financial/ContractBuilder";
 import { Client } from "@/types";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -12,9 +12,12 @@ export default function CRM() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | undefined>();
 
-  // Novos estados para os filtros
+  // Filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [nationalityFilter, setNationalityFilter] = useState("");
+
+  // Estado para forçar atualização do Board
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const { toast } = useToast();
 
@@ -35,6 +38,11 @@ export default function CRM() {
     setSelectedClient(undefined);
   };
 
+  // Função chamada quando um novo atleta é criado com sucesso
+  const handleClientCreated = () => {
+    setRefreshTrigger((prev) => prev + 1); // Força o PipelineBoard a recarregar
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -43,10 +51,9 @@ export default function CRM() {
           <h1 className="text-3xl font-bold tracking-tight">CRM</h1>
           <p className="text-muted-foreground mt-1">Gerencie seu pipeline de atletas</p>
         </div>
-        <Button className="gold-gradient text-primary-foreground">
-          <Plus className="w-4 h-4 mr-2" />
-          Novo Atleta
-        </Button>
+
+        {/* AQUI ESTÁ A MUDANÇA: O botão agora abre o Modal de Cadastro */}
+        <NewClientDialog onSuccess={handleClientCreated} />
       </div>
 
       {/* Barra de Filtros */}
@@ -72,8 +79,10 @@ export default function CRM() {
         </div>
       </div>
 
-      {/* Pipeline Board - Passando os filtros */}
+      {/* Pipeline Board */}
+      {/* Passamos uma key baseada no refreshTrigger para forçar o componente a remontar e buscar dados novos */}
       <PipelineBoard
+        key={refreshTrigger}
         onClientMoveToFechado={handleClientMoveToFechado}
         searchTerm={searchTerm}
         nationalityFilter={nationalityFilter}
