@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { Search, Globe } from "lucide-react";
 import { PipelineBoard } from "@/components/modules/crm/PipelineBoard";
-import { NewClientDialog } from "@/components/modules/crm/NewClientDialog"; // Importe o novo modal
+import { NewClientDialog } from "@/components/modules/crm/NewClientDialog";
 import { ContractBuilder } from "@/components/modules/financial/ContractBuilder";
-import { Client } from "@/types";
+import { Client, Installment, Commission } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { createContract } from "@/services/contractService";
 
 export default function CRM() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | undefined>();
+  const [isLoading, setIsLoading] = useState(false);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
@@ -26,21 +28,53 @@ export default function CRM() {
     setIsContractModalOpen(true);
   };
 
-  const handleSaveContract = (data: { totalValue: number; installments: any[]; commissions: any[] }) => {
-    console.log("Contract data:", { client: selectedClient, ...data });
+  const handleSaveContract = async (data: {
+    totalValue: number;
+    installments: Omit<Installment, "id" | "contract_id">[];
+    commissions: Omit<Commission, "id" | "contract_id" | "value">[];
+  }) => {
+    if (!selectedClient) {
+      toast({
+        title: "Erro",
+        description: "Nenhum cliente selecionado.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    toast({
-      title: "Contrato Salvo!",
-      description: `Contrato de ${selectedClient?.name} cadastrado com sucesso.`,
-    });
+    setIsLoading(true);
 
-    setIsContractModalOpen(false);
-    setSelectedClient(undefined);
+    try {
+      await createContract({
+        clientId: selectedClient.id,
+        totalValue: data.totalValue,
+        installments: data.installments,
+        commissions: data.commissions,
+      });
+
+      toast({
+        title: "Contrato Salvo!",
+        description: `Contrato de ${selectedClient.name} cadastrado com sucesso.`,
+      });
+
+      setIsContractModalOpen(false);
+      setSelectedClient(undefined);
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (error) {
+      console.error("Erro ao salvar contrato:", error);
+      toast({
+        title: "Erro ao salvar contrato",
+        description: "Ocorreu um erro ao cadastrar o contrato. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Função chamada quando um novo atleta é criado com sucesso
   const handleClientCreated = () => {
-    setRefreshTrigger((prev) => prev + 1); // Força o PipelineBoard a recarregar
+    setRefreshTrigger((prev) => prev + 1);
   };
 
   return (
@@ -52,7 +86,6 @@ export default function CRM() {
           <p className="text-muted-foreground mt-1">Gerencie seu pipeline de atletas</p>
         </div>
 
-        {/* AQUI ESTÁ A MUDANÇA: O botão agora abre o Modal de Cadastro */}
         <NewClientDialog onSuccess={handleClientCreated} />
       </div>
 
@@ -80,7 +113,6 @@ export default function CRM() {
       </div>
 
       {/* Pipeline Board */}
-      {/* Passamos uma key baseada no refreshTrigger para forçar o componente a remontar e buscar dados novos */}
       <PipelineBoard
         key={refreshTrigger}
         onClientMoveToFechado={handleClientMoveToFechado}
