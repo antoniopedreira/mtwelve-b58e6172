@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { PipelineColumn, Client, PipelineStage } from '@/types';
-import { getInitialPipelineData } from '@/data/mockData';
+import { PipelineStage } from '@/types';
 import { cn } from '@/lib/utils';
-import { User, Phone, Mail, MoreHorizontal } from 'lucide-react';
+import { User, Phone, Mail, MoreHorizontal, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,9 +10,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useClients, useUpdateClientStage, ClientRow } from '@/hooks/useClients';
+import { toast } from 'sonner';
 
 interface PipelineBoardProps {
-  onClientMoveToFechado: (client: Client) => void;
+  onClientMoveToFechado: (client: ClientRow) => void;
+}
+
+interface PipelineColumn {
+  id: PipelineStage;
+  title: string;
+  clients: ClientRow[];
 }
 
 const columnColors: Record<PipelineStage, string> = {
@@ -32,10 +39,32 @@ const columnBadgeColors: Record<PipelineStage, string> = {
   perdido: 'bg-red-500/10 text-red-400',
 };
 
-export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
-  const [columns, setColumns] = useState<PipelineColumn[]>(getInitialPipelineData());
+const stageOrder: PipelineStage[] = ['radar', 'contato', 'negociacao', 'fechado', 'perdido'];
+const stageTitles: Record<PipelineStage, string> = {
+  radar: 'Radar',
+  contato: 'Contato',
+  negociacao: 'Negociação',
+  fechado: 'Fechado',
+  perdido: 'Perdido',
+};
 
-  const handleDragEnd = (result: DropResult) => {
+export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
+  const { data: clients, isLoading, error } = useClients();
+  const updateStage = useUpdateClientStage();
+  const [columns, setColumns] = useState<PipelineColumn[]>([]);
+
+  useEffect(() => {
+    if (clients) {
+      const newColumns: PipelineColumn[] = stageOrder.map(stage => ({
+        id: stage,
+        title: stageTitles[stage],
+        clients: clients.filter(c => c.stage === stage),
+      }));
+      setColumns(newColumns);
+    }
+  }, [clients]);
+
+  const handleDragEnd = async (result: DropResult) => {
     const { source, destination } = result;
 
     if (!destination) return;
@@ -55,11 +84,10 @@ export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
     const sourceClients = [...sourceColumn.clients];
     const [movedClient] = sourceClients.splice(source.index, 1);
 
-    // Update client status
-    const updatedClient: Client = {
+    const updatedClient: ClientRow = {
       ...movedClient,
-      status: destination.droppableId as PipelineStage,
-      updatedAt: new Date(),
+      stage: destination.droppableId as PipelineStage,
+      updated_at: new Date().toISOString(),
     };
 
     if (source.droppableId === destination.droppableId) {
@@ -85,7 +113,15 @@ export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
         })
       );
 
-      // TODO: Supabase Integration - Update client status in database
+      // Update in Supabase
+      try {
+        await updateStage.mutateAsync({
+          id: movedClient.id,
+          stage: destination.droppableId as PipelineStage,
+        });
+      } catch (err) {
+        toast.error('Erro ao atualizar status do cliente');
+      }
 
       // If moved to "fechado", trigger contract modal
       if (destination.droppableId === 'fechado') {
@@ -93,6 +129,22 @@ export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
       }
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[400px] text-destructive">
+        Erro ao carregar clientes
+      </div>
+    );
+  }
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
@@ -152,11 +204,21 @@ export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                                <User className="w-4 h-4 text-muted-foreground" />
+                                {client.avatar_url ? (
+                                  <img 
+                                    src={client.avatar_url} 
+                                    alt={client.name} 
+                                    className="w-8 h-8 rounded-full object-cover"
+                                  />
+                                ) : (
+                                  <User className="w-4 h-4 text-muted-foreground" />
+                                )}
                               </div>
                               <div>
                                 <p className="font-medium text-sm">{client.name}</p>
-                                <p className="text-xs text-muted-foreground">{client.sport}</p>
+                                {client.nationality && (
+                                  <p className="text-xs text-muted-foreground">{client.nationality}</p>
+                                )}
                               </div>
                             </div>
                             <DropdownMenu>
@@ -173,19 +235,23 @@ export function PipelineBoard({ onClientMoveToFechado }: PipelineBoardProps) {
                             </DropdownMenu>
                           </div>
 
-                          {client.team && (
-                            <p className="text-xs text-primary mb-2">{client.team}</p>
+                          {client.school && (
+                            <p className="text-xs text-primary mb-2">{client.school}</p>
                           )}
 
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Phone className="w-3 h-3" />
-                              <span className="truncate max-w-[80px]">{client.phone}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Mail className="w-3 h-3" />
-                              <span className="truncate max-w-[80px]">{client.email}</span>
-                            </div>
+                            {client.phone && (
+                              <div className="flex items-center gap-1">
+                                <Phone className="w-3 h-3" />
+                                <span className="truncate max-w-[80px]">{client.phone}</span>
+                              </div>
+                            )}
+                            {client.email && (
+                              <div className="flex items-center gap-1">
+                                <Mail className="w-3 h-3" />
+                                <span className="truncate max-w-[80px]">{client.email}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
