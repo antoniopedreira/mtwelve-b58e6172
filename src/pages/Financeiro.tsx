@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useActiveContracts, ContractWithClient } from "@/hooks/useContracts";
+import { useActiveContracts, useCompletedContracts, ContractWithClient } from "@/hooks/useContracts";
 import { createContract } from "@/services/contractService";
 import { Client, Installment, Commission } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,6 +27,7 @@ export default function Financeiro() {
 
   const { toast } = useToast();
   const { data: activeContracts, isLoading: contractsLoading, refetch: refetchContracts } = useActiveContracts();
+  const { data: completedContracts, isLoading: completedLoading, refetch: refetchCompleted } = useCompletedContracts();
 
   // Estado para progresso de cada contrato
   const [contractProgress, setContractProgress] = useState<Record<string, { paid: number; total: number }>>({});
@@ -61,6 +62,7 @@ export default function Financeiro() {
 
   const handleDataRefresh = () => {
     refetchContracts();
+    refetchCompleted();
   };
 
   const handleOpenNewContract = () => {
@@ -248,6 +250,12 @@ export default function Financeiro() {
           >
             Contratos Ativos
           </TabsTrigger>
+          <TabsTrigger
+            value="completed"
+            className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
+          >
+            Concluídos
+          </TabsTrigger>
         </TabsList>
 
         {/* Aba 1: A Nova Matriz Financeira */}
@@ -288,6 +296,62 @@ export default function Financeiro() {
                 <Plus className="w-4 h-4 mr-2" />
                 Criar Primeiro Contrato
               </Button>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Aba 3: Contratos Concluídos */}
+        <TabsContent value="completed" className="space-y-4 focus-visible:outline-none">
+          {completedLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : completedContracts && completedContracts.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {completedContracts.map((contract) => (
+                <div
+                  key={contract.id}
+                  onClick={() => handleOpenContractDetail(contract.id)}
+                  className="p-5 rounded-xl bg-card border border-border/50 hover:border-blue-500/30 transition-colors group cursor-pointer"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <Avatar className="h-12 w-12">
+                      <AvatarImage src={contract.clients?.avatar_url || undefined} />
+                      <AvatarFallback className="bg-blue-500/10 text-blue-500">
+                        {contract.clients ? getInitials(contract.clients.name) : "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-500">
+                      Concluído
+                    </span>
+                  </div>
+                  <h3 className="font-semibold mb-1 text-lg">{contract.clients?.name || "Cliente"}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {contract.clients?.school || "Sem clube definido"}
+                  </p>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Valor Total</span>
+                      <span className="font-bold text-foreground">
+                        {formatCurrency(Number(contract.total_value))}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-border/50">
+                    <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                      <div className="bg-blue-500 h-1.5 rounded-full w-full" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <FileText className="w-16 h-16 mb-4 opacity-50" />
+              <h3 className="text-lg font-medium mb-2">Nenhum contrato concluído</h3>
+              <p className="text-sm">Os contratos aparecerão aqui quando todas as parcelas forem pagas.</p>
             </div>
           )}
         </TabsContent>
