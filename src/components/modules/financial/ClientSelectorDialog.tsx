@@ -68,7 +68,7 @@ export function ClientSelectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md bg-card border-border">
+      <DialogContent className="max-w-lg bg-card border-border">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="w-1 h-6 bg-[#E8BD27] rounded-full inline-block"></span>
