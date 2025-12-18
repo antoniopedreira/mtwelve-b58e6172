@@ -5,75 +5,110 @@ export type Database = {
     Tables: {
       clients: {
         Row: {
+          avatar_url: string | null;
+          club: string | null;
+          created_at: string;
+          email: string | null;
           id: string;
           name: string;
-          email: string | null;
-          phone: string | null;
-          club: string | null;
-          position: string | null;
-          stage: "radar" | "contato" | "negociacao" | "fechado" | "perdido";
-          value: number | null;
-          avatar_url: string | null;
           notes: string | null;
-          created_at: string;
+          phone: string | null;
+          position: string | null;
+          stage: Database["public"]["Enums"]["pipeline_stage"];
           updated_at: string;
+          value: number | null;
         };
         Insert: {
+          avatar_url?: string | null;
+          club?: string | null;
+          created_at?: string;
+          email?: string | null;
           id?: string;
           name: string;
-          email?: string | null;
-          phone?: string | null;
-          club?: string | null;
-          position?: string | null;
-          stage?: "radar" | "contato" | "negociacao" | "fechado" | "perdido";
-          value?: number | null;
-          avatar_url?: string | null;
           notes?: string | null;
-          created_at?: string;
+          phone?: string | null;
+          position?: string | null;
+          stage?: Database["public"]["Enums"]["pipeline_stage"];
           updated_at?: string;
+          value?: number | null;
         };
         Update: {
+          avatar_url?: string | null;
+          club?: string | null;
+          created_at?: string;
+          email?: string | null;
           id?: string;
           name?: string;
-          email?: string | null;
-          phone?: string | null;
-          club?: string | null;
-          position?: string | null;
-          stage?: "radar" | "contato" | "negociacao" | "fechado" | "perdido";
-          value?: number | null;
-          avatar_url?: string | null;
           notes?: string | null;
-          created_at?: string;
+          phone?: string | null;
+          position?: string | null;
+          stage?: Database["public"]["Enums"]["pipeline_stage"];
           updated_at?: string;
+          value?: number | null;
         };
         Relationships: [];
       };
+      commissions: {
+        Row: {
+          contract_id: string;
+          created_at: string;
+          employee_name: string;
+          id: string;
+          percentage: number;
+          value: number;
+        };
+        Insert: {
+          contract_id: string;
+          created_at?: string;
+          employee_name: string;
+          id?: string;
+          percentage: number;
+          value: number;
+        };
+        Update: {
+          contract_id?: string;
+          created_at?: string;
+          employee_name?: string;
+          id?: string;
+          percentage?: number;
+          value?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commissions_contract_id_fkey";
+            columns: ["contract_id"];
+            isOneToOne: false;
+            referencedRelation: "contracts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       contracts: {
         Row: {
-          id: string;
           client_id: string;
-          total_value: number;
-          status: "draft" | "active" | "completed" | "cancelled";
-          notes: string | null;
           created_at: string;
+          id: string;
+          notes: string | null;
+          status: Database["public"]["Enums"]["contract_status"];
+          total_value: number;
           updated_at: string;
         };
         Insert: {
-          id?: string;
           client_id: string;
-          total_value: number;
-          status?: "draft" | "active" | "completed" | "cancelled";
-          notes?: string | null;
           created_at?: string;
+          id?: string;
+          notes?: string | null;
+          status?: Database["public"]["Enums"]["contract_status"];
+          total_value: number;
           updated_at?: string;
         };
         Update: {
-          id?: string;
           client_id?: string;
-          total_value?: number;
-          status?: "draft" | "active" | "completed" | "cancelled";
-          notes?: string | null;
           created_at?: string;
+          id?: string;
+          notes?: string | null;
+          status?: Database["public"]["Enums"]["contract_status"];
+          total_value?: number;
           updated_at?: string;
         };
         Relationships: [
@@ -86,30 +121,54 @@ export type Database = {
           },
         ];
       };
-      installments: {
+      employees: {
         Row: {
-          id: string;
-          contract_id: string;
-          value: number;
-          due_date: string;
-          status: "pending" | "paid" | "overdue" | "cancelled";
           created_at: string;
+          email: string | null;
+          id: string;
+          name: string;
+          role: string | null;
         };
         Insert: {
-          id?: string;
-          contract_id: string;
-          value: number;
-          due_date: string;
-          status?: "pending" | "paid" | "overdue" | "cancelled";
           created_at?: string;
+          email?: string | null;
+          id?: string;
+          name: string;
+          role?: string | null;
         };
         Update: {
-          id?: string;
-          contract_id?: string;
-          value?: number;
-          due_date?: string;
-          status?: "pending" | "paid" | "overdue" | "cancelled";
           created_at?: string;
+          email?: string | null;
+          id?: string;
+          name?: string;
+          role?: string | null;
+        };
+        Relationships: [];
+      };
+      installments: {
+        Row: {
+          contract_id: string;
+          created_at: string;
+          due_date: string;
+          id: string;
+          status: Database["public"]["Enums"]["transaction_status"];
+          value: number;
+        };
+        Insert: {
+          contract_id: string;
+          created_at?: string;
+          due_date: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          value: number;
+        };
+        Update: {
+          contract_id?: string;
+          created_at?: string;
+          due_date?: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          value?: number;
         };
         Relationships: [
           {
@@ -121,140 +180,39 @@ export type Database = {
           },
         ];
       };
-      expenses: {
-        Row: {
-          id: string;
-          description: string;
-          amount: number;
-          category: "fixo" | "variavel" | "extra" | "imposto" | "comissao";
-          due_date: string;
-          status: "pending" | "paid" | "overdue" | "cancelled";
-          paid_at: string | null;
-          is_recurring: boolean | null;
-          recurrence_period: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          description: string;
-          amount: number;
-          category?: "fixo" | "variavel" | "extra" | "imposto" | "comissao";
-          due_date: string;
-          status?: "pending" | "paid" | "overdue" | "cancelled";
-          paid_at?: string | null;
-          is_recurring?: boolean | null;
-          recurrence_period?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          description?: string;
-          amount?: number;
-          category?: "fixo" | "variavel" | "extra" | "imposto" | "comissao";
-          due_date?: string;
-          status?: "pending" | "paid" | "overdue" | "cancelled";
-          paid_at?: string | null;
-          is_recurring?: boolean | null;
-          recurrence_period?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      commissions: {
-        Row: {
-          id: string;
-          contract_id: string;
-          employee_name: string;
-          percentage: number;
-          value: number;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          contract_id: string;
-          employee_name: string;
-          percentage: number;
-          value: number;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          contract_id?: string;
-          employee_name?: string;
-          percentage?: number;
-          value?: number;
-          created_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "commissions_contract_id_fkey";
-            columns: ["contract_id"];
-            isOneToOne: false;
-            referencedRelation: "contracts";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      employees: {
-        Row: {
-          id: string;
-          name: string;
-          role: string | null;
-          email: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          name: string;
-          role?: string | null;
-          email?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          role?: string | null;
-          email?: string | null;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
       transactions: {
         Row: {
-          id: string;
           contract_id: string | null;
-          type: "income" | "expense";
-          description: string;
-          value: number;
-          due_date: string;
-          status: "pending" | "paid" | "overdue" | "cancelled";
           created_at: string;
+          description: string;
+          due_date: string;
+          id: string;
+          status: Database["public"]["Enums"]["transaction_status"];
+          type: Database["public"]["Enums"]["transaction_type"];
           updated_at: string;
+          value: number;
         };
         Insert: {
-          id?: string;
           contract_id?: string | null;
-          type: "income" | "expense";
-          description: string;
-          value: number;
-          due_date: string;
-          status?: "pending" | "paid" | "overdue" | "cancelled";
           created_at?: string;
+          description: string;
+          due_date: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          type: Database["public"]["Enums"]["transaction_type"];
           updated_at?: string;
+          value: number;
         };
         Update: {
-          id?: string;
           contract_id?: string | null;
-          type?: "income" | "expense";
-          description?: string;
-          value?: number;
-          due_date?: string;
-          status?: "pending" | "paid" | "overdue" | "cancelled";
           created_at?: string;
+          description?: string;
+          due_date?: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          type?: Database["public"]["Enums"]["transaction_type"];
           updated_at?: string;
+          value?: number;
         };
         Relationships: [
           {
@@ -265,6 +223,49 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      // === ADICIONADO: TABELA DE DESPESAS ===
+      expenses: {
+        Row: {
+          id: string;
+          description: string;
+          amount: number;
+          category: Database["public"]["Enums"]["expense_category"];
+          due_date: string;
+          status: Database["public"]["Enums"]["transaction_status"];
+          paid_at: string | null;
+          is_recurring: boolean | null;
+          recurrence_period: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          description: string;
+          amount: number;
+          category?: Database["public"]["Enums"]["expense_category"];
+          due_date: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          paid_at?: string | null;
+          is_recurring?: boolean | null;
+          recurrence_period?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          description?: string;
+          amount?: number;
+          category?: Database["public"]["Enums"]["expense_category"];
+          due_date?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          paid_at?: string | null;
+          is_recurring?: boolean | null;
+          recurrence_period?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
     };
     Views: {
@@ -290,6 +291,7 @@ export type Database = {
       pipeline_stage: "radar" | "contato" | "negociacao" | "fechado" | "perdido";
       transaction_status: "pending" | "paid" | "overdue" | "cancelled";
       transaction_type: "income" | "expense";
+      // ADICIONADO: Enum de Categorias
       expense_category: "fixo" | "variavel" | "extra" | "imposto" | "comissao";
     };
     CompositeTypes: {

@@ -16,22 +16,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -70,6 +57,7 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
+      // O TypeScript agora vai reconhecer a tabela 'expenses' graças à correção no types.ts
       const { error } = await supabase.from("expenses").insert({
         description: values.description,
         amount: Number(values.amount),
@@ -105,14 +93,11 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
       <DialogContent className="sm:max-w-[425px] bg-card border-border">
         <DialogHeader>
           <DialogTitle>Cadastrar Despesa</DialogTitle>
-          <DialogDescription>
-            Lance seus custos fixos, variáveis ou extras.
-          </DialogDescription>
+          <DialogDescription>Lance seus custos fixos, variáveis ou extras.</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            
             {/* Descrição */}
             <FormField
               control={form.control}
@@ -184,11 +169,7 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                           variant={"outline"}
                           className={`w-full pl-3 text-left font-normal ${!field.value && "text-muted-foreground"}`}
                         >
-                          {field.value ? (
-                            format(field.value, "PPP", { locale: ptBR })
-                          ) : (
-                            <span>Selecione uma data</span>
-                          )}
+                          {field.value ? format(field.value, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
                           <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
                       </FormControl>
@@ -197,7 +178,8 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                       <Calendar
                         mode="single"
                         selected={field.value}
-                        onSelect={field.onSelect}
+                        onSelect={field.onChange} // <--- CORREÇÃO AQUI (era field.onSelect)
+                        disabled={(date) => date < new Date("1900-01-01")}
                         initialFocus
                       />
                     </PopoverContent>
@@ -215,10 +197,7 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
                     <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                     <div className="space-y-1 leading-none">
                       <FormLabel>Já está pago?</FormLabel>
@@ -226,23 +205,18 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="isRecurring"
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 bg-muted/20">
                     <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                     <div className="space-y-1 leading-none">
                       <FormLabel>É um Custo Fixo Recorrente?</FormLabel>
-                      <p className="text-xs text-muted-foreground">
-                        Marcar para referência futura de custos fixos.
-                      </p>
+                      <p className="text-xs text-muted-foreground">Marcar para referência futura de custos fixos.</p>
                     </div>
                   </FormItem>
                 )}
