@@ -3,6 +3,7 @@ import { Plus, FileText, Loader2, Users } from "lucide-react";
 import { FinancialSummary } from "@/components/modules/financial/FinancialSummary";
 import { ContractBuilder } from "@/components/modules/financial/ContractBuilder";
 import { ClientSelectorDialog } from "@/components/modules/financial/ClientSelectorDialog";
+import { ContractDetailDialog } from "@/components/modules/financial/ContractDetailDialog";
 import { NewExpenseDialog } from "@/components/modules/financial/NewExpenseDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,6 +21,8 @@ export default function Financeiro() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const { toast } = useToast();
@@ -147,6 +150,11 @@ export default function Financeiro() {
       .slice(0, 2);
   };
 
+  const handleOpenContractDetail = (contractId: string) => {
+    setSelectedContractId(contractId);
+    setIsDetailOpen(true);
+  };
+
   const renderContractCard = (contract: ContractWithClient) => {
     const progress = contractProgress[contract.id] || { paid: 0, total: Number(contract.total_value) };
     const percentage = progress.total > 0 ? (progress.paid / progress.total) * 100 : 0;
@@ -154,6 +162,7 @@ export default function Financeiro() {
     return (
       <div
         key={contract.id}
+        onClick={() => handleOpenContractDetail(contract.id)}
         className="p-5 rounded-xl bg-card border border-border/50 hover:border-[#E8BD27]/30 transition-colors group cursor-pointer"
       >
         <div className="flex items-start justify-between mb-4">
@@ -323,6 +332,14 @@ export default function Financeiro() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Modal: Detalhes do Contrato */}
+      <ContractDetailDialog
+        contractId={selectedContractId}
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        onContractUpdated={handleDataRefresh}
+      />
     </div>
   );
 }

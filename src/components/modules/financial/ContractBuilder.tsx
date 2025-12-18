@@ -19,7 +19,7 @@ interface ContractBuilderProps {
   onSave: (data: {
     totalValue: number;
     installments: Omit<Installment, 'id' | 'contract_id'>[];
-    commissions: Omit<Commission, 'id' | 'contract_id' | 'value'>[];
+    commissions: Omit<Commission, 'id' | 'contract_id' | 'value' | 'installment_id'>[];
   }) => void;
   onCancel: () => void;
 }
