@@ -43,14 +43,25 @@ export async function createContract({
     if (installmentsError) throw installmentsError;
   }
 
-  // 3. Inserir comissões (se houver)
-  if (commissions.length > 0) {
-    const commissionsData = commissions.map((comm) => ({
-      contract_id: contract.id,
-      employee_name: comm.employee_name,
-      percentage: comm.percentage,
-      value: (totalValue * comm.percentage) / 100,
-    }));
+  // 3. Buscar parcelas criadas para vincular comissões
+  const { data: createdInstallments, error: fetchInstError } = await supabase
+    .from("installments")
+    .select("id, value")
+    .eq("contract_id", contract.id);
+
+  if (fetchInstError) throw fetchInstError;
+
+  // 4. Inserir comissões por parcela (se houver)
+  if (commissions.length > 0 && createdInstallments && createdInstallments.length > 0) {
+    const commissionsData = commissions.flatMap((comm) =>
+      createdInstallments.map((inst) => ({
+        contract_id: contract.id,
+        installment_id: inst.id,
+        employee_name: comm.employee_name,
+        percentage: comm.percentage,
+        value: (Number(inst.value) * comm.percentage) / 100,
+      }))
+    );
 
     const { error: commissionsError } = await supabase
       .from("commissions")
@@ -59,7 +70,7 @@ export async function createContract({
     if (commissionsError) throw commissionsError;
   }
 
-  // 4. Atualizar estágio do cliente para "fechado"
+  // 5. Atualizar estágio do cliente para "fechado"
   await supabase
     .from("clients")
     .update({ stage: "fechado" })
