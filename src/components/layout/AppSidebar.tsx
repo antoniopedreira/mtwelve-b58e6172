@@ -11,11 +11,14 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const location = useLocation();
+  const { user, signOut } = useAuth();
   const isCollapsed = state === "collapsed";
 
   // URL da Logo Atualizada (Versão 2)
@@ -82,22 +85,29 @@ export function AppSidebar() {
       <SidebarFooter className="p-4 border-t border-border/10">
         <div
           className={cn(
-            "flex items-center gap-3 rounded-lg p-2 transition-all hover:bg-white/5 cursor-pointer",
+            "flex items-center gap-3 rounded-lg p-2 transition-all",
             isCollapsed && "justify-center px-0",
           )}
         >
           <Avatar className="h-9 w-9 border-2 border-[#E8BD27]/20">
-            <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback>JM</AvatarFallback>
+            <AvatarFallback>{user?.email?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
           </Avatar>
 
           {!isCollapsed && (
-            <div className="flex flex-col overflow-hidden animate-in fade-in duration-300">
-              <span className="text-sm font-medium text-white truncate">João Martins</span>
-              <span className="text-xs text-muted-foreground truncate">Agente Senior</span>
+            <div className="flex flex-col overflow-hidden animate-in fade-in duration-300 flex-1">
+              <span className="text-sm font-medium text-white truncate">{user?.email}</span>
             </div>
           )}
         </div>
+        <Button
+          variant="ghost"
+          size={isCollapsed ? "icon" : "default"}
+          onClick={signOut}
+          className="w-full text-muted-foreground hover:text-white hover:bg-white/10"
+        >
+          <LogOut className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">Sair</span>}
+        </Button>
       </SidebarFooter>
     </Sidebar>
   );
