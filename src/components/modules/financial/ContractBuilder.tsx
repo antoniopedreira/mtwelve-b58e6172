@@ -18,8 +18,8 @@ interface ContractBuilderProps {
   client?: { id: string; name: string };
   onSave: (data: {
     totalValue: number;
-    installments: Omit<Installment, 'id' | 'contractId'>[];
-    commissions: Omit<Commission, 'id' | 'contractId' | 'value'>[];
+    installments: Omit<Installment, 'id' | 'contract_id'>[];
+    commissions: Omit<Commission, 'id' | 'contract_id' | 'value'>[];
   }) => void;
   onCancel: () => void;
 }
@@ -100,10 +100,15 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
       totalValue,
       installments: installments.map((inst) => ({
         value: inst.value,
-        dueDate: new Date(inst.dueDate),
+        due_date: inst.dueDate,
         status: 'pending' as const,
       })),
-      commissions: commissions.filter((c) => c.employeeId),
+      commissions: commissions
+        .filter((c) => c.employeeId)
+        .map((c) => ({
+          employee_name: c.employeeName,
+          percentage: c.percentage,
+        })),
     });
   };
 
