@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import type { TablesInsert } from "@/integrations/supabase/types";
 import { CalendarIcon, Loader2, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -57,16 +58,16 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
-      // O TypeScript agora vai reconhecer a tabela 'expenses' graças à correção no types.ts
-      const { error } = await supabase.from("expenses").insert({
+      const expenseData: TablesInsert<"expenses"> = {
         description: values.description,
         amount: Number(values.amount),
         category: values.category,
-        due_date: values.dueDate.toISOString(),
+        due_date: values.dueDate.toISOString().split('T')[0],
         status: values.isPaid ? "paid" : "pending",
         paid_at: values.isPaid ? new Date().toISOString() : null,
         is_recurring: values.isRecurring,
-      });
+      };
+      const { error } = await supabase.from("expenses").insert(expenseData);
 
       if (error) throw error;
 
