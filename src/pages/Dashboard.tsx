@@ -58,7 +58,7 @@ export default function Dashboard() {
       try {
         setIsLoading(true);
 
-        // A. Totais Financeiros (Puxando da View para garantir precisão)
+        // A. Totais Financeiros
         const { data: financialRecords } = await supabase.from("financial_overview").select("amount, direction");
 
         let receita = 0;
@@ -186,14 +186,13 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* 1. KPIs FINANCEIROS (Formatados em R$) */}
+      {/* 1. KPIs FINANCEIROS */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <KPICard
           title="Receita Total"
-          // Passamos a string formatada para garantir o R$
           value={formatCurrency(financialTotals.receita)}
           icon={DollarSign}
-          trend={10}
+          trend={{ value: 10, isPositive: true }}
           trendLabel="vs. mês anterior"
           className="border-emerald-500/20"
         />
@@ -201,7 +200,7 @@ export default function Dashboard() {
           title="Despesa Total"
           value={formatCurrency(financialTotals.despesa)}
           icon={TrendingDown}
-          trend={-5}
+          trend={{ value: 5, isPositive: false }}
           trendLabel="vs. mês anterior"
           className="border-red-500/20"
         />
@@ -209,32 +208,31 @@ export default function Dashboard() {
           title="Lucro Total"
           value={formatCurrency(financialTotals.lucro)}
           icon={TrendingUp}
-          trend={15}
+          trend={{ value: 15, isPositive: true }}
           trendLabel="Margem Líquida"
           className="border-[#E8BD27]/20"
         />
 
         {/* 2. KPIs OPERACIONAIS (CRM) */}
-        {/* Usamos Loading state para não piscar '0' enquanto carrega */}
         <KPICard
           title="Clientes Ativos"
-          value={kpiLoading ? "..." : kpiData?.activeClients || 0}
+          value={kpiLoading ? "..." : String(kpiData?.activeClients || 0)}
           icon={Users}
-          trend={0}
+          trend={{ value: 0, isPositive: true }}
           trendLabel="na carteira"
         />
         <KPICard
           title="Oportunidades"
-          value={kpiLoading ? "..." : kpiData?.negotiationsCount || 0}
+          value={kpiLoading ? "..." : String(kpiData?.pendingDeals || 0)}
           icon={Briefcase}
-          trend={0}
+          trend={{ value: 0, isPositive: true }}
           trendLabel="no pipeline"
         />
         <KPICard
           title="Deals Fechados"
-          value={kpiLoading ? "..." : kpiData?.closedDealsCount || 0}
+          value={kpiLoading ? "..." : String(kpiData?.closedDeals || 0)}
           icon={CheckCircle2}
-          trend={0}
+          trend={{ value: 0, isPositive: true }}
           trendLabel="acumulado total"
         />
       </div>
