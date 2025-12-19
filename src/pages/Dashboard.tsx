@@ -216,6 +216,7 @@ export default function Dashboard() {
         {/* 2. KPIs OPERACIONAIS (CRM) */}
         <KPICard
           title="Clientes Ativos"
+          // Converte para String para satisfazer a prop 'value'
           value={kpiLoading ? "..." : String(kpiData?.activeClients || 0)}
           icon={Users}
           trend={{ value: 0, isPositive: true }}
