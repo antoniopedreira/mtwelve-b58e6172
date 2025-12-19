@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import type { TablesInsert } from "@/integrations/supabase/types";
-import { CalendarIcon, Loader2, Plus } from "lucide-react";
+import { CalendarIcon, Loader2, Plus, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -26,11 +26,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
-// Schema de Validação
 const formSchema = z.object({
   description: z.string().min(2, "Descrição obrigatória"),
   amount: z.string().min(1, "Valor obrigatório"),
-  category: z.enum(["fixo", "variavel", "extra", "imposto"]),
+  category: z.enum(["fixo", "variavel", "extra", "imposto", "comissao"]),
   dueDate: z.date({ required_error: "Data de vencimento obrigatória" }),
   isPaid: z.boolean().default(false),
   isRecurring: z.boolean().default(false),
@@ -38,11 +37,18 @@ const formSchema = z.object({
 
 interface NewExpenseDialogProps {
   onSuccess?: () => void;
+  expenseToEdit?: any; // Se passar isso, vira modo de edição
+  openProp?: boolean; // Controle externo de abertura
+  onOpenChangeProp?: (open: boolean) => void;
 }
 
-export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
-  const [open, setOpen] = useState(false);
+export function NewExpenseDialog({ onSuccess, expenseToEdit, openProp, onOpenChangeProp }: NewExpenseDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Controle se usa estado interno ou props externas
+  const isOpen = openProp !== undefined ? openProp : internalOpen;
+  const setOpen = onOpenChangeProp || setInternalOpen;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -55,6 +61,25 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
     },
   });
 
+  // Preenche o formulário se for edição
+  useEffect(() => {
+    if (expenseToEdit) {
+      // Ajuste para lidar com a data vinda do banco (YYYY-MM-DD)
+      const dateParts = expenseToEdit.due_date.split("-"); // [2025, 12, 01]
+      // Cria a data localmente sem conversão de fuso (ano, mês-1, dia)
+      const localDate = new Date(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2]));
+
+      form.reset({
+        description: expenseToEdit.description,
+        amount: String(expenseToEdit.amount),
+        category: expenseToEdit.category,
+        dueDate: localDate,
+        isPaid: expenseToEdit.status === "paid",
+        isRecurring: expenseToEdit.is_recurring || false,
+      });
+    }
+  }, [expenseToEdit, form]);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
@@ -62,16 +87,27 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
         description: values.description,
         amount: Number(values.amount),
         category: values.category,
-        due_date: values.dueDate.toISOString().split('T')[0],
+        due_date: format(values.dueDate, "yyyy-MM-dd"), // Salva YYYY-MM-DD puro
         status: values.isPaid ? "paid" : "pending",
         paid_at: values.isPaid ? new Date().toISOString() : null,
         is_recurring: values.isRecurring,
       };
-      const { error } = await supabase.from("expenses").insert(expenseData);
+
+      let error;
+
+      if (expenseToEdit) {
+        // UPDATE
+        const { error: updateError } = await supabase.from("expenses").update(expenseData).eq("id", expenseToEdit.id);
+        error = updateError;
+      } else {
+        // INSERT
+        const { error: insertError } = await supabase.from("expenses").insert(expenseData);
+        error = insertError;
+      }
 
       if (error) throw error;
 
-      toast.success("Despesa cadastrada com sucesso!");
+      toast.success(expenseToEdit ? "Despesa atualizada!" : "Despesa cadastrada!");
       setOpen(false);
       form.reset();
       if (onSuccess) onSuccess();
@@ -84,22 +120,27 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="bg-red-600 hover:bg-red-700 text-white gap-2">
-          <Plus className="h-4 w-4" />
-          Nova Despesa
-        </Button>
-      </DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={setOpen}>
+      {/* Só mostra o Trigger se não estiver sendo controlado externamente para edição */}
+      {!expenseToEdit && openProp === undefined && (
+        <DialogTrigger asChild>
+          <Button className="bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm">
+            <Plus className="h-4 w-4" />
+            Nova Despesa
+          </Button>
+        </DialogTrigger>
+      )}
+
       <DialogContent className="sm:max-w-[425px] bg-card border-border">
         <DialogHeader>
-          <DialogTitle>Cadastrar Despesa</DialogTitle>
-          <DialogDescription>Lance seus custos fixos, variáveis ou extras.</DialogDescription>
+          <DialogTitle>{expenseToEdit ? "Editar Despesa" : "Cadastrar Despesa"}</DialogTitle>
+          <DialogDescription>
+            {expenseToEdit ? "Altere os dados abaixo." : "Lance seus custos fixos, variáveis ou extras."}
+          </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Descrição */}
             <FormField
               control={form.control}
               name="description"
@@ -107,7 +148,7 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                 <FormItem>
                   <FormLabel>Descrição</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ex: Aluguel, Marketing..." {...field} />
+                    <Input placeholder="Ex: Aluguel" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -115,7 +156,6 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
             />
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Valor */}
               <FormField
                 control={form.control}
                 name="amount"
@@ -130,14 +170,13 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                 )}
               />
 
-              {/* Categoria */}
               <FormField
                 control={form.control}
                 name="category"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Categoria</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione" />
@@ -148,6 +187,7 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                         <SelectItem value="variavel">Custo Variável</SelectItem>
                         <SelectItem value="extra">Extra / Eventual</SelectItem>
                         <SelectItem value="imposto">Impostos</SelectItem>
+                        <SelectItem value="comissao">Comissão</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -156,7 +196,6 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
               />
             </div>
 
-            {/* Data de Vencimento */}
             <FormField
               control={form.control}
               name="dueDate"
@@ -179,7 +218,7 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                       <Calendar
                         mode="single"
                         selected={field.value}
-                        onSelect={field.onChange} // <--- CORREÇÃO AQUI (era field.onSelect)
+                        onSelect={field.onChange}
                         disabled={(date) => date < new Date("1900-01-01")}
                         initialFocus
                       />
@@ -190,7 +229,6 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
               )}
             />
 
-            {/* Checkboxes */}
             <div className="flex flex-col gap-3 pt-2">
               <FormField
                 control={form.control}
@@ -206,28 +244,12 @@ export function NewExpenseDialog({ onSuccess }: NewExpenseDialogProps) {
                   </FormItem>
                 )}
               />
-
-              <FormField
-                control={form.control}
-                name="isRecurring"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 bg-muted/20">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>É um Custo Fixo Recorrente?</FormLabel>
-                      <p className="text-xs text-muted-foreground">Marcar para referência futura de custos fixos.</p>
-                    </div>
-                  </FormItem>
-                )}
-              />
             </div>
 
             <DialogFooter>
               <Button type="submit" disabled={isLoading} className="w-full gold-gradient text-black font-bold">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Salvar Despesa
+                {expenseToEdit ? "Salvar Alterações" : "Salvar Despesa"}
               </Button>
             </DialogFooter>
           </form>
