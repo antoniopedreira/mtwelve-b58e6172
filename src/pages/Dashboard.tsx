@@ -186,55 +186,42 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* 1. KPIs FINANCEIROS */}
+      {/* 1. KPIs FINANCEIROS (Sem Trend) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <KPICard
           title="Receita Total"
           value={formatCurrency(financialTotals.receita)}
           icon={DollarSign}
-          trend={{ value: 10, isPositive: true }}
-          trendLabel="vs. mês anterior"
           className="border-emerald-500/20"
         />
         <KPICard
           title="Despesa Total"
           value={formatCurrency(financialTotals.despesa)}
           icon={TrendingDown}
-          trend={{ value: 5, isPositive: false }}
-          trendLabel="vs. mês anterior"
           className="border-red-500/20"
         />
         <KPICard
           title="Lucro Total"
           value={formatCurrency(financialTotals.lucro)}
           icon={TrendingUp}
-          trend={{ value: 15, isPositive: true }}
-          trendLabel="Margem Líquida"
           className="border-[#E8BD27]/20"
         />
 
-        {/* 2. KPIs OPERACIONAIS (CRM) */}
+        {/* 2. KPIs OPERACIONAIS (Sem Trend) */}
         <KPICard
           title="Clientes Ativos"
-          // Converte para String para satisfazer a prop 'value'
           value={kpiLoading ? "..." : String(kpiData?.activeClients || 0)}
           icon={Users}
-          trend={{ value: 0, isPositive: true }}
-          trendLabel="na carteira"
         />
         <KPICard
           title="Oportunidades"
           value={kpiLoading ? "..." : String(kpiData?.pendingDeals || 0)}
           icon={Briefcase}
-          trend={{ value: 0, isPositive: true }}
-          trendLabel="no pipeline"
         />
         <KPICard
           title="Deals Fechados"
           value={kpiLoading ? "..." : String(kpiData?.closedDeals || 0)}
           icon={CheckCircle2}
-          trend={{ value: 0, isPositive: true }}
-          trendLabel="acumulado total"
         />
       </div>
 
