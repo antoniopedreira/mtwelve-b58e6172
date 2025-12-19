@@ -36,7 +36,8 @@ export function ExpensesTable() {
   async function fetchExpenses() {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from("expenses").select("*").order("due_date", { ascending: false }); // Traz por data primeiro
+      // Buscamos do banco ordenado por data apenas como base
+      const { data, error } = await supabase.from("expenses").select("*").order("due_date", { ascending: false });
 
       if (error) throw error;
       setExpenses(data || []);
@@ -71,14 +72,13 @@ export function ExpensesTable() {
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
-  // --- LÓGICA DE AGRUPAMENTO E ORDENAÇÃO ---
+  // --- LÓGICA DE AGRUPAMENTO E ORDENAÇÃO ROBUSTA ---
   const groupedExpenses = useMemo(() => {
-    // 1. Filtra pela busca
     const filtered = expenses.filter((exp) => exp.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    // 2. Agrupa por Mês (yyyy-MM)
     const groups: Record<string, { label: string; items: any[]; total: number }> = {};
 
+    // 1. Agrupamento
     filtered.forEach((expense) => {
       const dateObj = new Date(expense.due_date + "T12:00:00");
       const key = format(dateObj, "yyyy-MM");
@@ -93,14 +93,24 @@ export function ExpensesTable() {
       groups[key].total += Number(expense.amount);
     });
 
-    // 3. Ordena dentro de cada grupo: Pendente em cima, Pago em baixo
+    // 2. Ordenação Forçada em cada grupo
     Object.keys(groups).forEach((key) => {
       groups[key].items.sort((a, b) => {
-        // Se 'a' é pago e 'b' é pendente, 'a' vai pra baixo (retorna 1)
-        if (a.status === "paid" && b.status !== "paid") return 1;
-        // Se 'a' é pendente e 'b' é pago, 'a' sobe (retorna -1)
-        if (a.status !== "paid" && b.status === "paid") return -1;
-        // Se forem iguais, mantém a ordem de data (que já veio do banco)
+        // --- Critério 1: STATUS ---
+        // Definimos pesos: Pago = 1, Pendente (ou qualquer outro) = 0
+        // Queremos menor peso primeiro (Pendente antes de Pago)
+        const weightA = a.status === "paid" ? 1 : 0;
+        const weightB = b.status === "paid" ? 1 : 0;
+
+        if (weightA !== weightB) {
+          return weightA - weightB; // Se A=0 (Pendente) e B=1 (Pago), retorna -1 (A sobe)
+        }
+
+        // --- Critério 2: DATA (Desempate) ---
+        // Se o status for igual, ordena por data (mais recente primeiro)
+        if (a.due_date < b.due_date) return 1;
+        if (a.due_date > b.due_date) return -1;
+
         return 0;
       });
     });
@@ -108,7 +118,6 @@ export function ExpensesTable() {
     return groups;
   }, [expenses, searchTerm]);
 
-  // Ordena os meses (mais recentes primeiro)
   const sortedMonthKeys = Object.keys(groupedExpenses).sort().reverse();
 
   return (
