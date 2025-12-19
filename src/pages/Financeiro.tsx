@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { Plus, FileText, Loader2, Users } from "lucide-react";
+import { Plus, FileText, Loader2, Users, CheckCircle2, History } from "lucide-react";
 import { FinancialSummary } from "@/components/modules/financial/FinancialSummary";
 import { ContractBuilder } from "@/components/modules/financial/ContractBuilder";
 import { ClientSelectorDialog } from "@/components/modules/financial/ClientSelectorDialog";
 import { ContractDetailDialog } from "@/components/modules/financial/ContractDetailDialog";
 import { NewExpenseDialog } from "@/components/modules/financial/NewExpenseDialog";
-import { ExpensesTable } from "@/components/modules/financial/ExpensesTable"; // <--- Importação da Tabela
+import { ExpensesTable } from "@/components/modules/financial/ExpensesTable";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -36,11 +36,13 @@ export default function Financeiro() {
   // Buscar progresso dos contratos
   useEffect(() => {
     const fetchProgress = async () => {
-      if (!activeContracts || activeContracts.length === 0) return;
+      // Junta as listas para buscar progresso de todos (ativos e concluídos)
+      const allContracts = [...(activeContracts || []), ...(completedContracts || [])];
+      if (allContracts.length === 0) return;
 
       const progressMap: Record<string, { paid: number; total: number }> = {};
 
-      for (const contract of activeContracts) {
+      for (const contract of allContracts) {
         const { data } = await supabase.from("installments").select("value, status").eq("contract_id", contract.id);
 
         if (data) {
@@ -54,13 +56,11 @@ export default function Financeiro() {
     };
 
     fetchProgress();
-  }, [activeContracts]);
+  }, [activeContracts, completedContracts]);
 
   const handleDataRefresh = () => {
     refetchContracts();
     refetchCompleted();
-    // Aqui você também pode forçar um reload se necessário,
-    // mas o ideal é que os componentes filhos gerenciem seus refreshes.
   };
 
   const handleOpenNewContract = () => {
@@ -81,11 +81,9 @@ export default function Financeiro() {
   const handleNewClientCreated = (client?: Client) => {
     setIsNewClientDialogOpen(false);
     if (client) {
-      // Se cliente foi criado, abre direto o contrato
       setSelectedClient(client);
       setIsContractModalOpen(true);
     } else {
-      // Senão, reabre seletor
       setIsClientSelectorOpen(true);
     }
   };
@@ -95,14 +93,7 @@ export default function Financeiro() {
     installments: Omit<Installment, "id" | "contract_id">[];
     commissions: Omit<Commission, "id" | "contract_id" | "value">[];
   }) => {
-    if (!selectedClient) {
-      toast({
-        title: "Erro",
-        description: "Nenhum cliente selecionado.",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!selectedClient) return;
 
     setIsLoading(true);
 
@@ -125,8 +116,8 @@ export default function Financeiro() {
     } catch (error) {
       console.error("Erro ao salvar contrato:", error);
       toast({
-        title: "Erro ao salvar contrato",
-        description: "Ocorreu um erro ao cadastrar o contrato. Tente novamente.",
+        title: "Erro",
+        description: "Erro ao salvar contrato.",
         variant: "destructive",
       });
     } finally {
@@ -155,7 +146,8 @@ export default function Financeiro() {
     setIsDetailOpen(true);
   };
 
-  const renderContractCard = (contract: ContractWithClient) => {
+  // Renderiza Cards (Usado tanto para Ativos quanto para Concluídos)
+  const renderContractCard = (contract: ContractWithClient, isCompleted = false) => {
     const progress = contractProgress[contract.id] || { paid: 0, total: Number(contract.total_value) };
     const percentage = progress.total > 0 ? (progress.paid / progress.total) * 100 : 0;
 
@@ -163,16 +155,24 @@ export default function Financeiro() {
       <div
         key={contract.id}
         onClick={() => handleOpenContractDetail(contract.id)}
-        className="p-5 rounded-xl bg-card border border-border/50 hover:border-[#E8BD27]/30 transition-colors group cursor-pointer"
+        className={`p-5 rounded-xl bg-card border border-border/50 transition-all group cursor-pointer ${
+          isCompleted ? "hover:border-blue-500/30" : "hover:border-[#E8BD27]/30 hover:shadow-md"
+        }`}
       >
         <div className="flex items-start justify-between mb-4">
           <Avatar className="h-12 w-12">
             <AvatarImage src={contract.clients?.avatar_url || undefined} />
-            <AvatarFallback className="bg-[#E8BD27]/10 text-[#E8BD27]">
+            <AvatarFallback className={isCompleted ? "bg-blue-500/10 text-blue-500" : "bg-[#E8BD27]/10 text-[#E8BD27]"}>
               {contract.clients ? getInitials(contract.clients.name) : "?"}
             </AvatarFallback>
           </Avatar>
-          <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500">Ativo</span>
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              isCompleted ? "bg-blue-500/10 text-blue-500" : "bg-emerald-500/10 text-emerald-500"
+            }`}
+          >
+            {isCompleted ? "Concluído" : "Ativo"}
+          </span>
         </div>
         <h3 className="font-semibold mb-1 text-lg">{contract.clients?.name || "Cliente"}</h3>
         <p className="text-sm text-muted-foreground mb-4">{contract.clients?.school || "Sem clube definido"}</p>
@@ -182,17 +182,22 @@ export default function Financeiro() {
             <span className="text-muted-foreground">Valor Total</span>
             <span className="font-bold text-foreground">{formatCurrency(Number(contract.total_value))}</span>
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Recebido</span>
-            <span className="text-emerald-500 font-medium">
-              {formatCurrency(progress.paid)} ({percentage.toFixed(0)}%)
-            </span>
-          </div>
+          {!isCompleted && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Recebido</span>
+              <span className="text-emerald-500 font-medium">
+                {formatCurrency(progress.paid)} ({percentage.toFixed(0)}%)
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 pt-4 border-t border-border/50">
           <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-            <div className="bg-[#E8BD27] h-1.5 rounded-full transition-all" style={{ width: `${percentage}%` }} />
+            <div
+              className={`h-1.5 rounded-full transition-all ${isCompleted ? "bg-blue-500 w-full" : "bg-[#E8BD27]"}`}
+              style={{ width: isCompleted ? "100%" : `${percentage}%` }}
+            />
           </div>
         </div>
       </div>
@@ -208,12 +213,9 @@ export default function Financeiro() {
           <p className="text-muted-foreground mt-1">DRE Gerencial, Fluxo de Caixa e Gestão de Contratos.</p>
         </div>
 
-        {/* Área de Ações (Botões) */}
+        {/* Botões de Ação */}
         <div className="flex items-center gap-3">
-          {/* Botão de Nova Despesa (Vermelho) */}
           <NewExpenseDialog onSuccess={handleDataRefresh} />
-
-          {/* Botão de Novo Contrato (Dourado) */}
           <Button
             className="gold-gradient text-primary-foreground font-semibold shadow-lg hover:shadow-xl transition-all"
             onClick={handleOpenNewContract}
@@ -224,25 +226,18 @@ export default function Financeiro() {
         </div>
       </div>
 
-      {/* Tabs Principais */}
+      {/* Abas Principais (Reduzidas para 3) */}
       <Tabs defaultValue="dre" className="space-y-6">
-        <TabsList className="bg-muted/50 p-1 rounded-xl">
+        <TabsList className="bg-muted/50 p-1 rounded-xl w-full md:w-auto grid grid-cols-3 md:flex">
           <TabsTrigger value="dre" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm">
-            DRE & Resultados
+            DRE
           </TabsTrigger>
           <TabsTrigger
             value="contracts"
             className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
           >
-            Contratos Ativos
+            Gestão de Contratos
           </TabsTrigger>
-          <TabsTrigger
-            value="completed"
-            className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Concluídos
-          </TabsTrigger>
-          {/* NOVA ABA ADICIONADA AQUI */}
           <TabsTrigger
             value="expenses"
             className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
@@ -251,106 +246,93 @@ export default function Financeiro() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Aba 1: A Nova Matriz Financeira */}
+        {/* --- ABA 1: DRE --- */}
         <TabsContent value="dre" className="space-y-4 focus-visible:outline-none">
           <FinancialSummary />
         </TabsContent>
 
-        {/* Aba 2: Gestão de Contratos */}
+        {/* --- ABA 2: GESTÃO DE CONTRATOS (Ativos + Concluídos) --- */}
         <TabsContent value="contracts" className="space-y-4 focus-visible:outline-none">
-          {contractsLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : activeContracts && activeContracts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeContracts.map(renderContractCard)}
-
-              {/* Card para Adicionar Novo Contrato */}
-              <button
-                onClick={handleOpenNewContract}
-                className="p-5 rounded-xl border-2 border-dashed border-border/50 hover:border-[#E8BD27]/50 hover:bg-muted/5 transition-all flex flex-col items-center justify-center min-h-[240px] text-muted-foreground hover:text-[#E8BD27] gap-3"
-              >
-                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center group-hover:bg-[#E8BD27]/10 transition-colors">
-                  <Plus className="w-6 h-6" />
-                </div>
-                <span className="font-medium">Novo Contrato</span>
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <Users className="w-16 h-16 mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">Nenhum contrato ativo</h3>
-              <p className="text-sm mb-6">Comece criando seu primeiro contrato.</p>
-              <Button className="gold-gradient text-primary-foreground font-semibold" onClick={handleOpenNewContract}>
-                <Plus className="w-4 h-4 mr-2" />
-                Criar Primeiro Contrato
-              </Button>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Aba 3: Contratos Concluídos */}
-        <TabsContent value="completed" className="space-y-4 focus-visible:outline-none">
-          {completedLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : completedContracts && completedContracts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {completedContracts.map((contract) => (
-                <div
-                  key={contract.id}
-                  onClick={() => handleOpenContractDetail(contract.id)}
-                  className="p-5 rounded-xl bg-card border border-border/50 hover:border-blue-500/30 transition-colors group cursor-pointer"
+          {/* Sub-abas internas para organizar Ativos vs Concluídos */}
+          <Tabs defaultValue="active" className="w-full">
+            <div className="flex items-center justify-between mb-4">
+              <TabsList className="bg-transparent border border-border/50 p-0 h-9 rounded-lg">
+                <TabsTrigger
+                  value="active"
+                  className="px-4 h-full rounded-l-lg rounded-r-none data-[state=active]:bg-muted data-[state=active]:text-foreground border-r border-border/50"
                 >
-                  <div className="flex items-start justify-between mb-4">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={contract.clients?.avatar_url || undefined} />
-                      <AvatarFallback className="bg-blue-500/10 text-blue-500">
-                        {contract.clients ? getInitials(contract.clients.name) : "?"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-500">
-                      Concluído
-                    </span>
-                  </div>
-                  <h3 className="font-semibold mb-1 text-lg">{contract.clients?.name || "Cliente"}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {contract.clients?.school || "Sem clube definido"}
-                  </p>
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Ativos ({activeContracts?.length || 0})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="completed"
+                  className="px-4 h-full rounded-l-none rounded-r-lg data-[state=active]:bg-muted data-[state=active]:text-foreground"
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  Concluídos ({completedContracts?.length || 0})
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Valor Total</span>
-                      <span className="font-bold text-foreground">{formatCurrency(Number(contract.total_value))}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t border-border/50">
-                    <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                      <div className="bg-blue-500 h-1.5 rounded-full w-full" />
-                    </div>
-                  </div>
+            {/* Lista de Contratos Ativos */}
+            <TabsContent value="active" className="mt-0">
+              {contractsLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted" />
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <FileText className="w-16 h-16 mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">Nenhum contrato concluído</h3>
-              <p className="text-sm">Os contratos aparecerão aqui quando todas as parcelas forem pagas.</p>
-            </div>
-          )}
+              ) : activeContracts && activeContracts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeContracts.map((c) => renderContractCard(c, false))}
+                  {/* Atalho Novo Contrato */}
+                  <button
+                    onClick={handleOpenNewContract}
+                    className="p-5 rounded-xl border-2 border-dashed border-border/50 hover:border-[#E8BD27]/50 hover:bg-muted/5 transition-all flex flex-col items-center justify-center min-h-[240px] text-muted-foreground hover:text-[#E8BD27] gap-3"
+                  >
+                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center group-hover:bg-[#E8BD27]/10 transition-colors">
+                      <Plus className="w-6 h-6" />
+                    </div>
+                    <span className="font-medium">Novo Contrato</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground border-2 border-dashed border-border/50 rounded-xl">
+                  <Users className="w-16 h-16 mb-4 opacity-20" />
+                  <h3 className="text-lg font-medium mb-2">Nenhum contrato ativo</h3>
+                  <Button variant="link" onClick={handleOpenNewContract} className="text-[#E8BD27]">
+                    Criar contrato agora
+                  </Button>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Lista de Contratos Concluídos */}
+            <TabsContent value="completed" className="mt-0">
+              {completedLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted" />
+                </div>
+              ) : completedContracts && completedContracts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {completedContracts.map((c) => renderContractCard(c, true))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground border-2 border-dashed border-border/50 rounded-xl">
+                  <History className="w-16 h-16 mb-4 opacity-20" />
+                  <h3 className="text-lg font-medium">Nenhum histórico disponível</h3>
+                  <p className="text-sm">Contratos finalizados aparecerão aqui.</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
-        {/* NOVA ABA: GESTÃO DE DESPESAS */}
+        {/* --- ABA 3: GESTÃO DE DESPESAS --- */}
         <TabsContent value="expenses" className="space-y-4 focus-visible:outline-none">
           <ExpensesTable />
         </TabsContent>
       </Tabs>
 
-      {/* Modal: Seletor de Cliente */}
+      {/* --- MODALS --- */}
       <ClientSelectorDialog
         open={isClientSelectorOpen}
         onOpenChange={setIsClientSelectorOpen}
@@ -358,7 +340,6 @@ export default function Financeiro() {
         onCreateNewClient={handleCreateNewClient}
       />
 
-      {/* Modal: Novo Cliente */}
       <Dialog open={isNewClientDialogOpen} onOpenChange={setIsNewClientDialogOpen}>
         <DialogContent className="sm:max-w-[500px] bg-card border-border">
           <DialogHeader>
@@ -368,7 +349,6 @@ export default function Financeiro() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: Novo Contrato */}
       <Dialog open={isContractModalOpen} onOpenChange={setIsContractModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border p-0 gap-0">
           <DialogHeader className="p-6 pb-2 border-b border-border/50">
@@ -390,7 +370,6 @@ export default function Financeiro() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: Detalhes do Contrato */}
       <ContractDetailDialog
         contractId={selectedContractId}
         open={isDetailOpen}
