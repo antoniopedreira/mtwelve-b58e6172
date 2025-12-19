@@ -13,12 +13,13 @@ import { Installment, Commission } from "@/types";
 import { Separator } from "@/components/ui/separator";
 import { useEmployees } from "@/hooks/useEmployees";
 
+// CORREÇÃO 1: Adicionado "installment_id" no Omit para evitar o erro de tipo
 interface ContractBuilderProps {
   client?: { id: string; name: string };
   onSave: (data: {
     totalValue: number;
     installments: Omit<Installment, "id" | "contract_id">[];
-    commissions: Omit<Commission, "id" | "contract_id" | "value">[];
+    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[];
   }) => void;
   onCancel: () => void;
 }
@@ -29,15 +30,17 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   const [startDate, setStartDate] = useState<Date>(new Date());
 
   const [installments, setInstallments] = useState<Omit<Installment, "id" | "contract_id">[]>([]);
-  const [commissions, setCommissions] = useState<Omit<Commission, "id" | "contract_id" | "value">[]>([]);
+
+  // CORREÇÃO 2: Adicionado "installment_id" no Omit do estado também
+  const [commissions, setCommissions] = useState<Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[]>(
+    [],
+  );
 
   const { data: employees } = useEmployees();
 
-  // CSS para esconder os spinners (setinhas) dos inputs numéricos
   const noSpinnerClass =
     "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
 
-  // Função para gerar parcelas automaticamente
   const generateInstallments = () => {
     const value = Number(totalValue);
     const count = Number(installmentsCount);
@@ -47,12 +50,10 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
     const installmentValue = value / count;
     const newInstallments = Array.from({ length: count }).map((_, index) => ({
       value: Number(installmentValue.toFixed(2)),
-      // CORREÇÃO: Usar format(yyyy-MM-dd) em vez de ISOString para evitar problemas de fuso
       due_date: format(addMonths(startDate, index), "yyyy-MM-dd"),
       status: "pending" as const,
     }));
 
-    // Ajusta centavos na última parcela para bater o valor exato
     const currentSum = newInstallments.reduce((acc, curr) => acc + curr.value, 0);
     const diff = value - currentSum;
     if (diff !== 0) {
@@ -62,13 +63,11 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
     setInstallments(newInstallments);
   };
 
-  // Atualiza uma parcela específica e RECALCULA O TOTAL
   const updateInstallment = (index: number, field: keyof (typeof installments)[0], value: any) => {
     const newInstallments = [...installments];
     newInstallments[index] = { ...newInstallments[index], [field]: value };
     setInstallments(newInstallments);
 
-    // Se alterou o valor, atualiza o Total Geral lá em cima
     if (field === "value") {
       const newTotal = newInstallments.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
       setTotalValue(newTotal.toFixed(2));
@@ -99,7 +98,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Resumo do Cliente */}
       {client && (
         <div className="bg-muted/30 p-4 rounded-lg border border-border/50 flex items-center justify-between">
           <div>
@@ -113,7 +111,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
         </div>
       )}
 
-      {/* Configuração Inicial */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="space-y-2">
           <Label>Valor Total do Contrato (R$)</Label>
@@ -168,7 +165,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
       <Separator />
 
-      {/* Lista de Parcelas */}
       <div className="space-y-4">
         <h3 className="font-semibold text-lg flex items-center gap-2">
           <span className="w-1 h-5 bg-primary rounded-full" />
@@ -190,7 +186,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                   #{index + 1}
                 </div>
                 <div className="md:col-span-5">
-                  {/* Date Picker da Parcela */}
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant={"outline"} className="w-full justify-start text-left font-normal">
@@ -205,7 +200,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                     <PopoverContent className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        // Adiciona T12:00:00 para garantir a visualização correta no calendário
                         selected={new Date(inst.due_date + "T12:00:00")}
                         onSelect={(date) => date && updateInstallment(index, "due_date", format(date, "yyyy-MM-dd"))}
                         initialFocus
@@ -238,7 +232,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
       <Separator />
 
-      {/* Comissões */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-lg flex items-center gap-2">
