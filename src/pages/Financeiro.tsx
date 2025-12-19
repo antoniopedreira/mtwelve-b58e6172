@@ -5,6 +5,7 @@ import { ContractBuilder } from "@/components/modules/financial/ContractBuilder"
 import { ClientSelectorDialog } from "@/components/modules/financial/ClientSelectorDialog";
 import { ContractDetailDialog } from "@/components/modules/financial/ContractDetailDialog";
 import { NewExpenseDialog } from "@/components/modules/financial/NewExpenseDialog";
+import { ExpensesTable } from "@/components/modules/financial/ExpensesTable"; // <--- Importação da Tabela
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,16 +41,11 @@ export default function Financeiro() {
       const progressMap: Record<string, { paid: number; total: number }> = {};
 
       for (const contract of activeContracts) {
-        const { data } = await supabase
-          .from("installments")
-          .select("value, status")
-          .eq("contract_id", contract.id);
+        const { data } = await supabase.from("installments").select("value, status").eq("contract_id", contract.id);
 
         if (data) {
           const total = data.reduce((sum, i) => sum + Number(i.value), 0);
-          const paid = data
-            .filter((i) => i.status === "paid")
-            .reduce((sum, i) => sum + Number(i.value), 0);
+          const paid = data.filter((i) => i.status === "paid").reduce((sum, i) => sum + Number(i.value), 0);
           progressMap[contract.id] = { total, paid };
         }
       }
@@ -63,6 +59,8 @@ export default function Financeiro() {
   const handleDataRefresh = () => {
     refetchContracts();
     refetchCompleted();
+    // Aqui você também pode forçar um reload se necessário,
+    // mas o ideal é que os componentes filhos gerenciem seus refreshes.
   };
 
   const handleOpenNewContract = () => {
@@ -174,21 +172,15 @@ export default function Financeiro() {
               {contract.clients ? getInitials(contract.clients.name) : "?"}
             </AvatarFallback>
           </Avatar>
-          <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500">
-            Ativo
-          </span>
+          <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500">Ativo</span>
         </div>
         <h3 className="font-semibold mb-1 text-lg">{contract.clients?.name || "Cliente"}</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          {contract.clients?.school || "Sem clube definido"}
-        </p>
+        <p className="text-sm text-muted-foreground mb-4">{contract.clients?.school || "Sem clube definido"}</p>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Valor Total</span>
-            <span className="font-bold text-foreground">
-              {formatCurrency(Number(contract.total_value))}
-            </span>
+            <span className="font-bold text-foreground">{formatCurrency(Number(contract.total_value))}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Recebido</span>
@@ -200,10 +192,7 @@ export default function Financeiro() {
 
         <div className="mt-4 pt-4 border-t border-border/50">
           <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-            <div
-              className="bg-[#E8BD27] h-1.5 rounded-full transition-all"
-              style={{ width: `${percentage}%` }}
-            />
+            <div className="bg-[#E8BD27] h-1.5 rounded-full transition-all" style={{ width: `${percentage}%` }} />
           </div>
         </div>
       </div>
@@ -216,15 +205,15 @@ export default function Financeiro() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Financeiro</h1>
-          <p className="text-muted-foreground mt-1">
-            DRE Gerencial, Fluxo de Caixa e Gestão de Contratos.
-          </p>
+          <p className="text-muted-foreground mt-1">DRE Gerencial, Fluxo de Caixa e Gestão de Contratos.</p>
         </div>
 
         {/* Área de Ações (Botões) */}
         <div className="flex items-center gap-3">
+          {/* Botão de Nova Despesa (Vermelho) */}
           <NewExpenseDialog onSuccess={handleDataRefresh} />
 
+          {/* Botão de Novo Contrato (Dourado) */}
           <Button
             className="gold-gradient text-primary-foreground font-semibold shadow-lg hover:shadow-xl transition-all"
             onClick={handleOpenNewContract}
@@ -238,10 +227,7 @@ export default function Financeiro() {
       {/* Tabs Principais */}
       <Tabs defaultValue="dre" className="space-y-6">
         <TabsList className="bg-muted/50 p-1 rounded-xl">
-          <TabsTrigger
-            value="dre"
-            className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
+          <TabsTrigger value="dre" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm">
             DRE & Resultados
           </TabsTrigger>
           <TabsTrigger
@@ -255,6 +241,13 @@ export default function Financeiro() {
             className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
           >
             Concluídos
+          </TabsTrigger>
+          {/* NOVA ABA ADICIONADA AQUI */}
+          <TabsTrigger
+            value="expenses"
+            className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
+          >
+            Gestão de Despesas
           </TabsTrigger>
         </TabsList>
 
@@ -289,10 +282,7 @@ export default function Financeiro() {
               <Users className="w-16 h-16 mb-4 opacity-50" />
               <h3 className="text-lg font-medium mb-2">Nenhum contrato ativo</h3>
               <p className="text-sm mb-6">Comece criando seu primeiro contrato.</p>
-              <Button
-                className="gold-gradient text-primary-foreground font-semibold"
-                onClick={handleOpenNewContract}
-              >
+              <Button className="gold-gradient text-primary-foreground font-semibold" onClick={handleOpenNewContract}>
                 <Plus className="w-4 h-4 mr-2" />
                 Criar Primeiro Contrato
               </Button>
@@ -333,9 +323,7 @@ export default function Financeiro() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Valor Total</span>
-                      <span className="font-bold text-foreground">
-                        {formatCurrency(Number(contract.total_value))}
-                      </span>
+                      <span className="font-bold text-foreground">{formatCurrency(Number(contract.total_value))}</span>
                     </div>
                   </div>
 
@@ -354,6 +342,11 @@ export default function Financeiro() {
               <p className="text-sm">Os contratos aparecerão aqui quando todas as parcelas forem pagas.</p>
             </div>
           )}
+        </TabsContent>
+
+        {/* NOVA ABA: GESTÃO DE DESPESAS */}
+        <TabsContent value="expenses" className="space-y-4 focus-visible:outline-none">
+          <ExpensesTable />
         </TabsContent>
       </Tabs>
 
