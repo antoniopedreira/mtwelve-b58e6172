@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { format, parseISO, startOfMonth } from "date-fns";
+import { format, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Loader2,
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  Minus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,7 +19,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-// Interface para os dados brutos do Supabase
 interface FinancialRecord {
   id: string;
   title: string;
@@ -29,17 +29,15 @@ interface FinancialRecord {
   status: string | null;
 }
 
-// Estrutura para nossa Matriz de Dados
 type MatrixData = {
   [category: string]: {
     totalByMonth: Record<string, number>;
     items: Record<
       string,
       {
-        // Agrupado por Título (Ex: Nome do Cliente)
         [month: string]: {
           amount: number;
-          status: string[]; // Lista de status (caso haja >1 lançamento no mesmo mês/título)
+          status: string[];
         };
       }
     >;
@@ -50,9 +48,8 @@ export function FinancialSummary() {
   const [records, setRecords] = useState<FinancialRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Controle de quais linhas estão expandidas
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({
-    receitas: true, // Começa aberto para melhor UX
+    receitas: true,
     despesas: false,
     comissoes: false,
   });
@@ -74,7 +71,7 @@ export function FinancialSummary() {
     }
   }
 
-  // --- PROCESSAMENTO DOS DADOS (MATRIZ) ---
+  // --- PROCESSAMENTO ---
   const { matrix, months, totals } = useMemo(() => {
     const matrix: MatrixData = {
       receitas: { totalByMonth: {}, items: {} },
@@ -86,19 +83,16 @@ export function FinancialSummary() {
     const grandTotals: Record<string, number> = {};
 
     records.forEach((record) => {
-      // Normaliza data para Mês (yyyy-MM)
-      // Ajuste de fuso: Adiciona hora fixa para garantir o dia correto
+      // Ajuste de fuso: T12:00:00 para garantir dia correto
       const dateStr = record.date.includes("T") ? record.date : `${record.date}T12:00:00`;
       const dateObj = new Date(dateStr);
       const monthKey = format(startOfMonth(dateObj), "yyyy-MM");
       uniqueMonths.add(monthKey);
 
-      // Define categoria
       let categoryKey = "despesas";
       if (record.direction === "entrada") categoryKey = "receitas";
       else if (record.type === "comissao") categoryKey = "comissoes";
 
-      // Inicializa estruturas se não existirem
       const catGroup = matrix[categoryKey];
       if (!catGroup.totalByMonth[monthKey]) catGroup.totalByMonth[monthKey] = 0;
 
@@ -108,7 +102,6 @@ export function FinancialSummary() {
         catGroup.items[title][monthKey] = { amount: 0, status: [] };
       }
 
-      // Soma valores
       const val = Number(record.amount);
       catGroup.totalByMonth[monthKey] += val;
       catGroup.items[title][monthKey].amount += val;
@@ -116,18 +109,14 @@ export function FinancialSummary() {
         catGroup.items[title][monthKey].status.push(record.status);
       }
 
-      // Totais Gerais (Resultado)
       if (!grandTotals[monthKey]) grandTotals[monthKey] = 0;
       if (categoryKey === "receitas") grandTotals[monthKey] += val;
       else grandTotals[monthKey] -= val;
     });
 
-    const sortedMonths = Array.from(uniqueMonths).sort();
-
-    return { matrix, months: sortedMonths, totals: grandTotals };
+    return { matrix, months: Array.from(uniqueMonths).sort(), totals: grandTotals };
   }, [records]);
 
-  // Função auxiliar para expandir/recolher
   const toggleRow = (key: string) => {
     setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -135,79 +124,89 @@ export function FinancialSummary() {
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
+  const formatPercent = (val: number) => {
+    if (!isFinite(val) || isNaN(val)) return "-";
+    return `${val > 0 ? "+" : ""}${val.toFixed(1)}%`;
+  };
+
   const getMonthLabel = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
     const date = new Date(Number(year), Number(month) - 1, 1);
-    const label = format(date, "MMM yyyy", { locale: ptBR });
+    const label = format(date, "MMM yy", { locale: ptBR }); // Ex: Jan 25
     return label.charAt(0).toUpperCase() + label.slice(1);
   };
 
-  // Renderiza o ícone de status (Pago/Pendente)
-  const StatusIcon = ({ statuses }: { statuses: string[] }) => {
-    if (!statuses || statuses.length === 0) return null;
+  // Calcula a variação percentual
+  const calculateVariation = (current: number, previous: number) => {
+    if (!previous) return 0; // Evita divisão por zero
+    return ((current - previous) / previous) * 100;
+  };
 
-    // Se todos forem 'paid' -> Verde
-    const allPaid = statuses.every((s) => s === "paid");
-    // Se algum for 'paid' mas não todos (parcial) -> Azul? Vamos simplificar:
-    // Se tem algum pendente -> Amarelo
-    const hasPending = statuses.some((s) => s === "pending");
+  // Componente de Variação (Célula AH)
+  const VariationCell = ({
+    current,
+    previous,
+    type,
+  }: {
+    current: number;
+    previous: number;
+    type: "good_is_up" | "good_is_down";
+  }) => {
+    if (!previous) return <TableCell className="w-[60px] p-1 text-center text-xs text-muted-foreground">-</TableCell>;
 
-    if (allPaid) {
+    const variation = calculateVariation(current, previous);
+    if (variation === 0)
       return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger>
-              <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-            </TooltipTrigger>
-            <TooltipContent>Pago</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <TableCell className="w-[60px] p-1 text-center text-xs text-muted-foreground">
+          <Minus className="w-3 h-3 mx-auto" />
+        </TableCell>
       );
+
+    // Lógica de Cores
+    let colorClass = "text-muted-foreground";
+    if (type === "good_is_up") {
+      colorClass = variation > 0 ? "text-emerald-500 font-bold" : "text-red-400 font-bold";
+    } else {
+      // Despesas: subir é ruim
+      colorClass = variation > 0 ? "text-red-400 font-bold" : "text-emerald-500 font-bold";
     }
-    if (hasPending) {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger>
-              <Clock className="h-3 w-3 text-yellow-500" />
-            </TooltipTrigger>
-            <TooltipContent>Pendente</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    }
+
     return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger>
-            <AlertCircle className="h-3 w-3 text-red-400" />
-          </TooltipTrigger>
-          <TooltipContent>{statuses[0]}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <TableCell className="w-[60px] p-1 text-center border-l border-dashed border-border/30 bg-muted/5">
+        <div className={cn("text-[10px] flex items-center justify-center gap-0.5", colorClass)}>
+          {variation > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+          {Math.abs(variation).toFixed(0)}%
+        </div>
+      </TableCell>
     );
   };
 
-  if (isLoading) {
+  const StatusIcon = ({ statuses }: { statuses: string[] }) => {
+    if (!statuses || statuses.length === 0) return null;
+    const allPaid = statuses.every((s) => s === "paid");
+    const hasPending = statuses.some((s) => s === "pending");
+
+    if (allPaid) return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
+    if (hasPending) return <Clock className="h-3 w-3 text-yellow-500" />;
+    return <AlertCircle className="h-3 w-3 text-red-400" />;
+  };
+
+  if (isLoading)
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  if (records.length === 0) {
+  if (records.length === 0)
     return (
       <Card className="bg-muted/20 border-dashed">
-        <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-          <DollarSign className="h-10 w-10 mb-2 opacity-20" />
-          <p>Nenhuma movimentação financeira encontrada.</p>
+        <CardContent className="flex flex-col items-center justify-center py-10 opacity-50">
+          <DollarSign className="h-10 w-10 mb-2" />
+          <p>Sem dados.</p>
         </CardContent>
       </Card>
     );
-  }
 
-  // Totais KPI
   const totalReceitas = Object.values(matrix.receitas.totalByMonth).reduce((a, b) => a + b, 0);
   const totalDespesas = Object.values(matrix.despesas.totalByMonth).reduce((a, b) => a + b, 0);
   const totalComissoes = Object.values(matrix.comissoes.totalByMonth).reduce((a, b) => a + b, 0);
@@ -215,7 +214,7 @@ export function FinancialSummary() {
 
   return (
     <div className="space-y-6">
-      {/* 1. KPIs */}
+      {/* KPIs */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="bg-card border-border/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -248,39 +247,57 @@ export function FinancialSummary() {
         </Card>
       </div>
 
-      {/* 2. MATRIZ FINANCEIRA */}
-      <Card className="border-border/50 bg-card">
+      {/* MATRIZ COM ANÁLISE HORIZONTAL */}
+      <Card className="border-border/50 bg-card overflow-hidden">
         <CardHeader>
-          <CardTitle>DRE Gerencial - Detalhado</CardTitle>
+          <CardTitle>DRE Gerencial - Análise Horizontal</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
-                  <TableHead className="w-[250px] font-bold text-primary pl-6">Categoria / Item</TableHead>
-                  {months.map((m) => (
-                    <TableHead key={m} className="text-right min-w-[120px] font-semibold">
-                      {getMonthLabel(m)}
-                    </TableHead>
+                  <TableHead className="w-[200px] font-bold text-primary pl-6 sticky left-0 bg-muted/30 z-10">
+                    Item
+                  </TableHead>
+                  {months.map((m, i) => (
+                    <>
+                      <TableHead key={m} className="text-right min-w-[100px] font-semibold">
+                        {getMonthLabel(m)}
+                      </TableHead>
+                      {i > 0 && (
+                        <TableHead
+                          key={`${m}-var`}
+                          className="w-[60px] text-center text-[10px] text-muted-foreground p-1"
+                        >
+                          AH%
+                        </TableHead>
+                      )}
+                    </>
                   ))}
                   <TableHead className="text-right font-bold pr-6">TOTAL</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* === GRUPO RECEITAS === */}
-                <TableRow
-                  className="cursor-pointer hover:bg-muted/50 transition-colors group"
-                  onClick={() => toggleRow("receitas")}
-                >
-                  <TableCell className="font-bold text-emerald-500 flex items-center gap-2 pl-4">
-                    {expandedRows.receitas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {/* --- RECEITAS --- */}
+                <TableRow className="cursor-pointer hover:bg-muted/50 group" onClick={() => toggleRow("receitas")}>
+                  <TableCell className="font-bold text-emerald-500 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 group-hover:bg-muted/50">
+                    {expandedRows.receitas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{" "}
                     Receitas
                   </TableCell>
-                  {months.map((m) => (
-                    <TableCell key={m} className="text-right font-bold text-emerald-500/80">
-                      {formatCurrency(matrix.receitas.totalByMonth[m] || 0)}
-                    </TableCell>
+                  {months.map((m, i) => (
+                    <>
+                      <TableCell key={m} className="text-right font-bold text-emerald-500/80">
+                        {formatCurrency(matrix.receitas.totalByMonth[m] || 0)}
+                      </TableCell>
+                      {i > 0 && (
+                        <VariationCell
+                          current={matrix.receitas.totalByMonth[m] || 0}
+                          previous={matrix.receitas.totalByMonth[months[i - 1]] || 0}
+                          type="good_is_up"
+                        />
+                      )}
+                    </>
                   ))}
                   <TableCell className="text-right font-bold text-emerald-500 pr-6">
                     {formatCurrency(totalReceitas)}
@@ -288,55 +305,61 @@ export function FinancialSummary() {
                 </TableRow>
 
                 {expandedRows.receitas &&
-                  Object.keys(matrix.receitas.items).map((title) => {
-                    const itemData = matrix.receitas.items[title];
-                    const itemTotal = Object.values(itemData).reduce((sum, d) => sum + d.amount, 0);
+                  Object.keys(matrix.receitas.items).map((title) => (
+                    <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
+                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
+                        <div className="w-1 h-1 rounded-full bg-emerald-500/50" /> {title}
+                      </TableCell>
+                      {months.map((m, i) => (
+                        <>
+                          <TableCell key={m} className="text-right">
+                            {matrix.receitas.items[title][m] ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <span>{formatCurrency(matrix.receitas.items[title][m].amount)}</span>
+                                <StatusIcon statuses={matrix.receitas.items[title][m].status} />
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground/20">-</span>
+                            )}
+                          </TableCell>
+                          {i > 0 && (
+                            <VariationCell
+                              current={matrix.receitas.items[title][m]?.amount || 0}
+                              previous={matrix.receitas.items[title][months[i - 1]]?.amount || 0}
+                              type="good_is_up"
+                            />
+                          )}
+                        </>
+                      ))}
+                      <TableCell className="text-right font-medium pr-6">
+                        {formatCurrency(Object.values(matrix.receitas.items[title]).reduce((s, x) => s + x.amount, 0))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
 
-                    return (
-                      <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
-                        <TableCell className="pl-10 text-muted-foreground flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-emerald-500/50" />
-                          {title}
-                        </TableCell>
-                        {months.map((m) => {
-                          const cellData = itemData[m];
-                          return (
-                            <TableCell key={m} className="text-right">
-                              {cellData ? (
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="text-foreground/80">{formatCurrency(cellData.amount)}</span>
-                                  <StatusIcon statuses={cellData.status} />
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground/20">-</span>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                        <TableCell className="text-right font-medium text-muted-foreground pr-6">
-                          {formatCurrency(itemTotal)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-
-                {/* === GRUPO COMISSÕES === */}
-                <TableRow
-                  className="cursor-pointer hover:bg-muted/50 transition-colors group"
-                  onClick={() => toggleRow("comissoes")}
-                >
-                  <TableCell className="font-bold text-muted-foreground flex items-center gap-2 pl-4">
+                {/* --- COMISSÕES --- */}
+                <TableRow className="cursor-pointer hover:bg-muted/50 group" onClick={() => toggleRow("comissoes")}>
+                  <TableCell className="font-bold text-muted-foreground flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 group-hover:bg-muted/50">
                     {expandedRows.comissoes ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
                       <ChevronRight className="h-4 w-4" />
-                    )}
+                    )}{" "}
                     (-) Comissões
                   </TableCell>
-                  {months.map((m) => (
-                    <TableCell key={m} className="text-right font-bold text-muted-foreground/80">
-                      {formatCurrency(matrix.comissoes.totalByMonth[m] || 0)}
-                    </TableCell>
+                  {months.map((m, i) => (
+                    <>
+                      <TableCell key={m} className="text-right font-bold text-muted-foreground">
+                        {formatCurrency(matrix.comissoes.totalByMonth[m] || 0)}
+                      </TableCell>
+                      {i > 0 && (
+                        <VariationCell
+                          current={matrix.comissoes.totalByMonth[m] || 0}
+                          previous={matrix.comissoes.totalByMonth[months[i - 1]] || 0}
+                          type="good_is_down"
+                        />
+                      )}
+                    </>
                   ))}
                   <TableCell className="text-right font-bold text-muted-foreground pr-6">
                     {formatCurrency(totalComissoes)}
@@ -344,51 +367,57 @@ export function FinancialSummary() {
                 </TableRow>
 
                 {expandedRows.comissoes &&
-                  Object.keys(matrix.comissoes.items).map((title) => {
-                    const itemData = matrix.comissoes.items[title];
-                    const itemTotal = Object.values(itemData).reduce((sum, d) => sum + d.amount, 0);
+                  Object.keys(matrix.comissoes.items).map((title) => (
+                    <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
+                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
+                        <div className="w-1 h-1 rounded-full bg-muted-foreground/50" /> {title}
+                      </TableCell>
+                      {months.map((m, i) => (
+                        <>
+                          <TableCell key={m} className="text-right">
+                            {matrix.comissoes.items[title][m] ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <span>{formatCurrency(matrix.comissoes.items[title][m].amount)}</span>
+                                <StatusIcon statuses={matrix.comissoes.items[title][m].status} />
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground/20">-</span>
+                            )}
+                          </TableCell>
+                          {i > 0 && (
+                            <VariationCell
+                              current={matrix.comissoes.items[title][m]?.amount || 0}
+                              previous={matrix.comissoes.items[title][months[i - 1]]?.amount || 0}
+                              type="good_is_down"
+                            />
+                          )}
+                        </>
+                      ))}
+                      <TableCell className="text-right font-medium pr-6">
+                        {formatCurrency(Object.values(matrix.comissoes.items[title]).reduce((s, x) => s + x.amount, 0))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
 
-                    return (
-                      <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
-                        <TableCell className="pl-10 text-muted-foreground flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-muted-foreground/50" />
-                          {title}
-                        </TableCell>
-                        {months.map((m) => {
-                          const cellData = itemData[m];
-                          return (
-                            <TableCell key={m} className="text-right">
-                              {cellData ? (
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="text-foreground/80">{formatCurrency(cellData.amount)}</span>
-                                  <StatusIcon statuses={cellData.status} />
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground/20">-</span>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                        <TableCell className="text-right font-medium text-muted-foreground pr-6">
-                          {formatCurrency(itemTotal)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-
-                {/* === GRUPO DESPESAS === */}
-                <TableRow
-                  className="cursor-pointer hover:bg-muted/50 transition-colors group"
-                  onClick={() => toggleRow("despesas")}
-                >
-                  <TableCell className="font-bold text-red-400 flex items-center gap-2 pl-4">
-                    {expandedRows.despesas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {/* --- DESPESAS --- */}
+                <TableRow className="cursor-pointer hover:bg-muted/50 group" onClick={() => toggleRow("despesas")}>
+                  <TableCell className="font-bold text-red-400 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 group-hover:bg-muted/50">
+                    {expandedRows.despesas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{" "}
                     (-) Despesas
                   </TableCell>
-                  {months.map((m) => (
-                    <TableCell key={m} className="text-right font-bold text-red-400/80">
-                      {formatCurrency(matrix.despesas.totalByMonth[m] || 0)}
-                    </TableCell>
+                  {months.map((m, i) => (
+                    <>
+                      <TableCell key={m} className="text-right font-bold text-red-400/80">
+                        {formatCurrency(matrix.despesas.totalByMonth[m] || 0)}
+                      </TableCell>
+                      {i > 0 && (
+                        <VariationCell
+                          current={matrix.despesas.totalByMonth[m] || 0}
+                          previous={matrix.despesas.totalByMonth[months[i - 1]] || 0}
+                          type="good_is_down"
+                        />
+                      )}
+                    </>
                   ))}
                   <TableCell className="text-right font-bold text-red-400 pr-6">
                     {formatCurrency(totalDespesas)}
@@ -396,48 +425,62 @@ export function FinancialSummary() {
                 </TableRow>
 
                 {expandedRows.despesas &&
-                  Object.keys(matrix.despesas.items).map((title) => {
-                    const itemData = matrix.despesas.items[title];
-                    const itemTotal = Object.values(itemData).reduce((sum, d) => sum + d.amount, 0);
+                  Object.keys(matrix.despesas.items).map((title) => (
+                    <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
+                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
+                        <div className="w-1 h-1 rounded-full bg-red-400/50" /> {title}
+                      </TableCell>
+                      {months.map((m, i) => (
+                        <>
+                          <TableCell key={m} className="text-right">
+                            {matrix.despesas.items[title][m] ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <span>{formatCurrency(matrix.despesas.items[title][m].amount)}</span>
+                                <StatusIcon statuses={matrix.despesas.items[title][m].status} />
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground/20">-</span>
+                            )}
+                          </TableCell>
+                          {i > 0 && (
+                            <VariationCell
+                              current={matrix.despesas.items[title][m]?.amount || 0}
+                              previous={matrix.despesas.items[title][months[i - 1]]?.amount || 0}
+                              type="good_is_down"
+                            />
+                          )}
+                        </>
+                      ))}
+                      <TableCell className="text-right font-medium pr-6">
+                        {formatCurrency(Object.values(matrix.despesas.items[title]).reduce((s, x) => s + x.amount, 0))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
 
-                    return (
-                      <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
-                        <TableCell className="pl-10 text-muted-foreground flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-red-400/50" />
-                          {title}
-                        </TableCell>
-                        {months.map((m) => {
-                          const cellData = itemData[m];
-                          return (
-                            <TableCell key={m} className="text-right">
-                              {cellData ? (
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="text-foreground/80">{formatCurrency(cellData.amount)}</span>
-                                  <StatusIcon statuses={cellData.status} />
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground/20">-</span>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                        <TableCell className="text-right font-medium text-muted-foreground pr-6">
-                          {formatCurrency(itemTotal)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-
-                {/* === RESULTADO === */}
+                {/* --- RESULTADO --- */}
                 <TableRow className="bg-muted/10 border-t-2 border-border/50">
-                  <TableCell className="font-bold text-[#E8BD27] pl-4">(=) RESULTADO LÍQUIDO</TableCell>
-                  {months.map((m) => (
-                    <TableCell
-                      key={m}
-                      className={cn("text-right font-bold", (totals[m] || 0) >= 0 ? "text-[#E8BD27]" : "text-red-500")}
-                    >
-                      {formatCurrency(totals[m] || 0)}
-                    </TableCell>
+                  <TableCell className="font-bold text-[#E8BD27] pl-4 sticky left-0 bg-muted/10 z-10">
+                    (=) RESULTADO
+                  </TableCell>
+                  {months.map((m, i) => (
+                    <>
+                      <TableCell
+                        key={m}
+                        className={cn(
+                          "text-right font-bold",
+                          (totals[m] || 0) >= 0 ? "text-[#E8BD27]" : "text-red-500",
+                        )}
+                      >
+                        {formatCurrency(totals[m] || 0)}
+                      </TableCell>
+                      {i > 0 && (
+                        <VariationCell
+                          current={totals[m] || 0}
+                          previous={totals[months[i - 1]] || 0}
+                          type="good_is_up"
+                        />
+                      )}
+                    </>
                   ))}
                   <TableCell
                     className={cn(
