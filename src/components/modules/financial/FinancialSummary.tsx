@@ -48,8 +48,9 @@ export function FinancialSummary() {
   const [records, setRecords] = useState<FinancialRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ALTERAÇÃO AQUI: Agora 'receitas' começa como false (fechado)
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({
-    receitas: true,
+    receitas: false,
     despesas: false,
     comissoes: false,
   });
@@ -124,25 +125,18 @@ export function FinancialSummary() {
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
-  const formatPercent = (val: number) => {
-    if (!isFinite(val) || isNaN(val)) return "-";
-    return `${val > 0 ? "+" : ""}${val.toFixed(1)}%`;
-  };
-
   const getMonthLabel = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
     const date = new Date(Number(year), Number(month) - 1, 1);
-    const label = format(date, "MMM yy", { locale: ptBR }); // Ex: Jan 25
+    const label = format(date, "MMM yy", { locale: ptBR });
     return label.charAt(0).toUpperCase() + label.slice(1);
   };
 
-  // Calcula a variação percentual
   const calculateVariation = (current: number, previous: number) => {
-    if (!previous) return 0; // Evita divisão por zero
+    if (!previous) return 0;
     return ((current - previous) / previous) * 100;
   };
 
-  // Componente de Variação (Célula AH)
   const VariationCell = ({
     current,
     previous,
@@ -162,12 +156,10 @@ export function FinancialSummary() {
         </TableCell>
       );
 
-    // Lógica de Cores
     let colorClass = "text-muted-foreground";
     if (type === "good_is_up") {
       colorClass = variation > 0 ? "text-emerald-500 font-bold" : "text-red-400 font-bold";
     } else {
-      // Despesas: subir é ruim
       colorClass = variation > 0 ? "text-red-400 font-bold" : "text-emerald-500 font-bold";
     }
 
@@ -280,8 +272,8 @@ export function FinancialSummary() {
               </TableHeader>
               <TableBody>
                 {/* --- RECEITAS --- */}
-                <TableRow className="cursor-pointer hover:bg-muted/50 group" onClick={() => toggleRow("receitas")}>
-                  <TableCell className="font-bold text-emerald-500 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 group-hover:bg-muted/50">
+                <TableRow className="cursor-pointer group" onClick={() => toggleRow("receitas")}>
+                  <TableCell className="font-bold text-emerald-500 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10">
                     {expandedRows.receitas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{" "}
                     Receitas
                   </TableCell>
@@ -306,7 +298,7 @@ export function FinancialSummary() {
 
                 {expandedRows.receitas &&
                   Object.keys(matrix.receitas.items).map((title) => (
-                    <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
+                    <TableRow key={title} className="bg-muted/5 text-sm">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
                         <div className="w-1 h-1 rounded-full bg-emerald-500/50" /> {title}
                       </TableCell>
@@ -338,8 +330,8 @@ export function FinancialSummary() {
                   ))}
 
                 {/* --- COMISSÕES --- */}
-                <TableRow className="cursor-pointer hover:bg-muted/50 group" onClick={() => toggleRow("comissoes")}>
-                  <TableCell className="font-bold text-muted-foreground flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 group-hover:bg-muted/50">
+                <TableRow className="cursor-pointer group" onClick={() => toggleRow("comissoes")}>
+                  <TableCell className="font-bold text-muted-foreground flex items-center gap-2 pl-4 sticky left-0 bg-card z-10">
                     {expandedRows.comissoes ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
@@ -368,7 +360,7 @@ export function FinancialSummary() {
 
                 {expandedRows.comissoes &&
                   Object.keys(matrix.comissoes.items).map((title) => (
-                    <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
+                    <TableRow key={title} className="bg-muted/5 text-sm">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
                         <div className="w-1 h-1 rounded-full bg-muted-foreground/50" /> {title}
                       </TableCell>
@@ -400,8 +392,8 @@ export function FinancialSummary() {
                   ))}
 
                 {/* --- DESPESAS --- */}
-                <TableRow className="cursor-pointer hover:bg-muted/50 group" onClick={() => toggleRow("despesas")}>
-                  <TableCell className="font-bold text-red-400 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 group-hover:bg-muted/50">
+                <TableRow className="cursor-pointer group" onClick={() => toggleRow("despesas")}>
+                  <TableCell className="font-bold text-red-400 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10">
                     {expandedRows.despesas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{" "}
                     (-) Despesas
                   </TableCell>
@@ -426,7 +418,7 @@ export function FinancialSummary() {
 
                 {expandedRows.despesas &&
                   Object.keys(matrix.despesas.items).map((title) => (
-                    <TableRow key={title} className="bg-muted/5 hover:bg-muted/10 text-sm">
+                    <TableRow key={title} className="bg-muted/5 text-sm">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
                         <div className="w-1 h-1 rounded-full bg-red-400/50" /> {title}
                       </TableCell>
