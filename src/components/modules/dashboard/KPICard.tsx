@@ -3,16 +3,16 @@ import { cn } from "@/lib/utils";
 
 interface KPICardProps {
   title: string;
-  value: string;
+  value: string; // Espera sempre uma string (ex: "R$ 1.000,00" ou "205")
   subtitle?: string;
   icon: LucideIcon;
   trend?: {
     value: number;
     isPositive: boolean;
   };
-  trendLabel?: string; // Adicionado
+  trendLabel?: string;
   variant?: "default" | "primary" | "success" | "warning";
-  className?: string; // Adicionado
+  className?: string; // Adicionado para aceitar bordas coloridas
 }
 
 export function KPICard({
@@ -21,7 +21,7 @@ export function KPICard({
   subtitle,
   icon: Icon,
   trend,
-  trendLabel = "vs mês anterior", // Valor padrão
+  trendLabel = "vs mês anterior",
   variant = "default",
   className,
 }: KPICardProps) {
@@ -33,7 +33,7 @@ export function KPICard({
         "border-border/50 hover:border-border",
         "hover:shadow-lg hover:shadow-black/20",
         variant === "primary" && "border-primary/30 hover:border-primary/50 surface-glow",
-        className, // Permite injetar classes extras (cores de borda)
+        className,
       )}
     >
       {/* Accent line */}
