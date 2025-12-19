@@ -33,6 +33,10 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
   const { data: employees } = useEmployees();
 
+  // CSS para esconder os spinners (setinhas) dos inputs numéricos
+  const noSpinnerClass =
+    "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
   // Função para gerar parcelas automaticamente
   const generateInstallments = () => {
     const value = Number(totalValue);
@@ -43,11 +47,12 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
     const installmentValue = value / count;
     const newInstallments = Array.from({ length: count }).map((_, index) => ({
       value: Number(installmentValue.toFixed(2)),
-      due_date: addMonths(startDate, index).toISOString(),
+      // CORREÇÃO: Usar format(yyyy-MM-dd) em vez de ISOString para evitar problemas de fuso
+      due_date: format(addMonths(startDate, index), "yyyy-MM-dd"),
       status: "pending" as const,
     }));
 
-    // Ajusta centavos na última parcela
+    // Ajusta centavos na última parcela para bater o valor exato
     const currentSum = newInstallments.reduce((acc, curr) => acc + curr.value, 0);
     const diff = value - currentSum;
     if (diff !== 0) {
@@ -117,7 +122,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
             placeholder="0.00"
             value={totalValue}
             onChange={(e) => setTotalValue(e.target.value)}
-            className="text-lg font-medium"
+            className={`text-lg font-medium ${noSpinnerClass}`}
           />
         </div>
         <div className="space-y-2">
@@ -127,6 +132,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
             min="1"
             value={installmentsCount}
             onChange={(e) => setInstallmentsCount(e.target.value)}
+            className={noSpinnerClass}
           />
         </div>
         <div className="space-y-2">
@@ -184,18 +190,24 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                   #{index + 1}
                 </div>
                 <div className="md:col-span-5">
+                  {/* Date Picker da Parcela */}
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant={"outline"} className="w-full justify-start text-left font-normal">
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {inst.due_date ? format(new Date(inst.due_date), "dd/MM/yyyy") : <span>Data</span>}
+                        {inst.due_date ? (
+                          format(new Date(inst.due_date + "T12:00:00"), "dd/MM/yyyy")
+                        ) : (
+                          <span>Data</span>
+                        )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        selected={new Date(inst.due_date)}
-                        onSelect={(date) => date && updateInstallment(index, "due_date", date.toISOString())}
+                        // Adiciona T12:00:00 para garantir a visualização correta no calendário
+                        selected={new Date(inst.due_date + "T12:00:00")}
+                        onSelect={(date) => date && updateInstallment(index, "due_date", format(date, "yyyy-MM-dd"))}
                         initialFocus
                       />
                     </PopoverContent>
@@ -206,7 +218,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                     type="number"
                     value={inst.value}
                     onChange={(e) => updateInstallment(index, "value", Number(e.target.value))}
-                    className="font-medium"
+                    className={`font-medium ${noSpinnerClass}`}
                   />
                 </div>
               </div>
@@ -270,7 +282,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                       type="number"
                       value={comm.percentage}
                       onChange={(e) => updateCommission(index, "percentage", Number(e.target.value))}
-                      className="pr-6"
+                      className={`pr-6 ${noSpinnerClass}`}
                     />
                     <span className="absolute right-3 top-2.5 text-xs text-muted-foreground">%</span>
                   </div>
