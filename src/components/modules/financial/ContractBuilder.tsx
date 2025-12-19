@@ -1,302 +1,308 @@
-import { useState, useMemo } from 'react';
-import { Plus, Trash2, AlertCircle, CheckCircle, UserPlus, Loader2 } from 'lucide-react';
-import { Installment, Commission } from '@/types';
-import { useEmployees } from '@/hooks/useEmployees';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { useState, useEffect } from "react";
+import { format, addMonths } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { CalendarIcon, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
+import { Installment, Commission } from "@/types";
+import { Separator } from "@/components/ui/separator";
+import { useEmployees } from "@/hooks/useEmployees";
 
 interface ContractBuilderProps {
   client?: { id: string; name: string };
   onSave: (data: {
     totalValue: number;
-    installments: Omit<Installment, 'id' | 'contract_id'>[];
-    commissions: Omit<Commission, 'id' | 'contract_id' | 'value' | 'installment_id'>[];
+    installments: Omit<Installment, "id" | "contract_id">[];
+    commissions: Omit<Commission, "id" | "contract_id" | "value">[];
   }) => void;
   onCancel: () => void;
 }
 
 export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderProps) {
-  const { data: employees, isLoading: employeesLoading } = useEmployees();
-  const [totalValue, setTotalValue] = useState<number>(0);
-  const [installments, setInstallments] = useState<Array<{
-    value: number;
-    dueDate: string;
-  }>>([{ value: 0, dueDate: '' }]);
-  const [commissions, setCommissions] = useState<Array<{
-    employeeId: string;
-    employeeName: string;
-    percentage: number;
-  }>>([]);
+  const [totalValue, setTotalValue] = useState<string>("");
+  const [installmentsCount, setInstallmentsCount] = useState<string>("1");
+  const [startDate, setStartDate] = useState<Date>(new Date());
 
-  const installmentsSum = useMemo(() => {
-    return installments.reduce((sum, inst) => sum + (inst.value || 0), 0);
-  }, [installments]);
+  const [installments, setInstallments] = useState<Omit<Installment, "id" | "contract_id">[]>([]);
+  const [commissions, setCommissions] = useState<Omit<Commission, "id" | "contract_id" | "value">[]>([]);
 
-  const difference = totalValue - installmentsSum;
-  const isBalanced = Math.abs(difference) < 0.01;
+  const { data: employees } = useEmployees();
 
-  const totalCommissionPercent = useMemo(() => {
-    return commissions.reduce((sum, c) => sum + (c.percentage || 0), 0);
-  }, [commissions]);
+  // Função para gerar parcelas automaticamente
+  const generateInstallments = () => {
+    const value = Number(totalValue);
+    const count = Number(installmentsCount);
 
-  const addInstallment = () => {
-    setInstallments([...installments, { value: 0, dueDate: '' }]);
+    if (!value || !count) return;
+
+    const installmentValue = value / count;
+    const newInstallments = Array.from({ length: count }).map((_, index) => ({
+      value: Number(installmentValue.toFixed(2)),
+      due_date: addMonths(startDate, index).toISOString(),
+      status: "pending" as const,
+    }));
+
+    // Ajusta centavos na última parcela
+    const currentSum = newInstallments.reduce((acc, curr) => acc + curr.value, 0);
+    const diff = value - currentSum;
+    if (diff !== 0) {
+      newInstallments[newInstallments.length - 1].value += diff;
+    }
+
+    setInstallments(newInstallments);
   };
 
-  const removeInstallment = (index: number) => {
-    if (installments.length > 1) {
-      setInstallments(installments.filter((_, i) => i !== index));
+  // Atualiza uma parcela específica e RECALCULA O TOTAL
+  const updateInstallment = (index: number, field: keyof (typeof installments)[0], value: any) => {
+    const newInstallments = [...installments];
+    newInstallments[index] = { ...newInstallments[index], [field]: value };
+    setInstallments(newInstallments);
+
+    // Se alterou o valor, atualiza o Total Geral lá em cima
+    if (field === "value") {
+      const newTotal = newInstallments.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
+      setTotalValue(newTotal.toFixed(2));
     }
   };
 
-  const updateInstallment = (index: number, field: 'value' | 'dueDate', value: string | number) => {
-    const updated = [...installments];
-    updated[index] = { ...updated[index], [field]: value };
-    setInstallments(updated);
-  };
-
-  const distributeEvenly = () => {
-    if (installments.length === 0 || totalValue === 0) return;
-    const valuePerInstallment = totalValue / installments.length;
-    setInstallments(
-      installments.map((inst) => ({ ...inst, value: Number(valuePerInstallment.toFixed(2)) }))
-    );
-  };
-
   const addCommission = () => {
-    setCommissions([...commissions, { employeeId: '', employeeName: '', percentage: 0 }]);
+    setCommissions([...commissions, { employee_name: "", percentage: 0 }]);
+  };
+
+  const updateCommission = (index: number, field: keyof (typeof commissions)[0], value: any) => {
+    const newCommissions = [...commissions];
+    newCommissions[index] = { ...newCommissions[index], [field]: value };
+    setCommissions(newCommissions);
   };
 
   const removeCommission = (index: number) => {
     setCommissions(commissions.filter((_, i) => i !== index));
   };
 
-  const updateCommission = (index: number, employeeId: string) => {
-    const employee = employees?.find((e) => e.id === employeeId);
-    if (employee) {
-      const updated = [...commissions];
-      updated[index] = { ...updated[index], employeeId, employeeName: employee.name };
-      setCommissions(updated);
-    }
-  };
-
-  const updateCommissionPercent = (index: number, percentage: number) => {
-    const updated = [...commissions];
-    updated[index] = { ...updated[index], percentage };
-    setCommissions(updated);
-  };
-
   const handleSave = () => {
     onSave({
-      totalValue,
-      installments: installments.map((inst) => ({
-        value: inst.value,
-        due_date: inst.dueDate,
-        status: 'pending' as const,
-      })),
-      commissions: commissions
-        .filter((c) => c.employeeId)
-        .map((c) => ({
-          employee_name: c.employeeName,
-          percentage: c.percentage,
-        })),
+      totalValue: Number(totalValue),
+      installments,
+      commissions,
     });
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
-  };
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Client Info */}
+    <div className="space-y-8 animate-fade-in">
+      {/* Resumo do Cliente */}
       {client && (
-        <div className="p-4 rounded-lg bg-surface border border-border/50">
-          <p className="text-sm text-muted-foreground">Cliente</p>
-          <p className="font-semibold text-lg">{client.name}</p>
+        <div className="bg-muted/30 p-4 rounded-lg border border-border/50 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">Cliente Selecionado</p>
+            <p className="font-semibold text-lg">{client.name}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-muted-foreground">Status</p>
+            <span className="text-emerald-500 font-medium text-sm">Novo Contrato</span>
+          </div>
         </div>
       )}
 
-      {/* Total Value */}
-      <div className="space-y-2">
-        <Label htmlFor="totalValue">Valor Total do Contrato</Label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+      {/* Configuração Inicial */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="space-y-2">
+          <Label>Valor Total do Contrato (R$)</Label>
           <Input
-            id="totalValue"
             type="number"
-            value={totalValue || ''}
-            onChange={(e) => setTotalValue(Number(e.target.value))}
-            className="pl-10 text-lg font-semibold"
-            placeholder="0,00"
+            placeholder="0.00"
+            value={totalValue}
+            onChange={(e) => setTotalValue(e.target.value)}
+            className="text-lg font-medium"
           />
         </div>
+        <div className="space-y-2">
+          <Label>Quantidade de Parcelas</Label>
+          <Input
+            type="number"
+            min="1"
+            value={installmentsCount}
+            onChange={(e) => setInstallmentsCount(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Data da 1ª Parcela</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant={"outline"}
+                className={cn("w-full justify-start text-left font-normal", !startDate && "text-muted-foreground")}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {startDate ? format(startDate, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecione</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={startDate}
+                onSelect={(date) => date && setStartDate(date)}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
-      {/* Split Payments */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label>Parcelas</Label>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={distributeEvenly}>
-              Distribuir Igualmente
-            </Button>
-            <Button variant="outline" size="sm" onClick={addInstallment}>
-              <Plus className="w-4 h-4 mr-1" />
-              Parcela
-            </Button>
-          </div>
-        </div>
+      <div className="flex justify-end">
+        <Button onClick={generateInstallments} variant="secondary" className="gap-2">
+          <Wand2 className="h-4 w-4" />
+          Gerar Parcelas
+        </Button>
+      </div>
 
-        <div className="space-y-3">
-          {installments.map((inst, index) => (
-            <div key={index} className="flex items-center gap-3 animate-slide-up">
-              <div className="flex-1 grid grid-cols-2 gap-3">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
+      <Separator />
+
+      {/* Lista de Parcelas */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-lg flex items-center gap-2">
+          <span className="w-1 h-5 bg-primary rounded-full" />
+          Parcelamento
+        </h3>
+
+        {installments.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+            Configure os valores acima e clique em "Gerar Parcelas"
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {installments.map((inst, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-3 bg-card border rounded-lg hover:border-primary/30 transition-colors"
+              >
+                <div className="md:col-span-1 text-sm font-medium text-muted-foreground text-center md:text-left">
+                  #{index + 1}
+                </div>
+                <div className="md:col-span-5">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant={"outline"} className="w-full justify-start text-left font-normal">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {inst.due_date ? format(new Date(inst.due_date), "dd/MM/yyyy") : <span>Data</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={new Date(inst.due_date)}
+                        onSelect={(date) => date && updateInstallment(index, "due_date", date.toISOString())}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="md:col-span-6">
                   <Input
                     type="number"
-                    value={inst.value || ''}
-                    onChange={(e) => updateInstallment(index, 'value', Number(e.target.value))}
-                    className="pl-10"
-                    placeholder="Valor"
+                    value={inst.value}
+                    onChange={(e) => updateInstallment(index, "value", Number(e.target.value))}
+                    className="font-medium"
                   />
                 </div>
-                <Input
-                  type="date"
-                  value={inst.dueDate}
-                  onChange={(e) => updateInstallment(index, 'dueDate', e.target.value)}
-                />
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => removeInstallment(index)}
-                disabled={installments.length === 1}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
-        </div>
+            ))}
 
-        {/* Validation Feedback */}
-        <div className={cn(
-          'p-3 rounded-lg flex items-center gap-2 transition-colors',
-          isBalanced ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
-        )}>
-          {isBalanced ? (
-            <CheckCircle className="w-4 h-4" />
-          ) : (
-            <AlertCircle className="w-4 h-4" />
-          )}
-          <span className="text-sm font-medium">
-            {isBalanced
-              ? 'Parcelas balanceadas!'
-              : difference > 0
-              ? `Faltam ${formatCurrency(difference)}`
-              : `Excede em ${formatCurrency(Math.abs(difference))}`}
-          </span>
-        </div>
+            <div className="flex justify-end mt-2 text-sm text-muted-foreground">
+              Total Parcelado:{" "}
+              <span className="font-bold text-foreground ml-2">
+                {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                  installments.reduce((a, b) => a + b.value, 0),
+                )}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Commissions */}
+      <Separator />
+
+      {/* Comissões */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Label>Comissões</Label>
-          <Button variant="outline" size="sm" onClick={addCommission}>
-            <UserPlus className="w-4 h-4 mr-1" />
+          <h3 className="font-semibold text-lg flex items-center gap-2">
+            <span className="w-1 h-5 bg-primary rounded-full" />
+            Comissões & Parceiros
+          </h3>
+          <Button onClick={addCommission} variant="outline" size="sm" className="gap-2">
+            <Plus className="h-4 w-4" />
             Adicionar
           </Button>
         </div>
 
         {commissions.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Nenhuma comissão cadastrada
-          </p>
+          <div className="text-sm text-muted-foreground italic">Nenhuma comissão configurada para este contrato.</div>
         ) : (
           <div className="space-y-3">
             {commissions.map((comm, index) => (
-              <div key={index} className="flex items-center gap-3 animate-slide-up">
-                <div className="flex-1 grid grid-cols-2 gap-3">
+              <div key={index} className="flex gap-4 items-end bg-muted/20 p-3 rounded-lg border">
+                <div className="flex-1 space-y-2">
+                  <Label>Beneficiário</Label>
                   <Select
-                    value={comm.employeeId}
-                    onValueChange={(value) => updateCommission(index, value)}
+                    value={comm.employee_name}
+                    onValueChange={(val) => updateCommission(index, "employee_name", val)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Funcionário" />
+                      <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {employeesLoading ? (
-                        <div className="flex items-center justify-center py-2">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        </div>
-                      ) : (
-                        employees?.map((emp) => (
-                          <SelectItem key={emp.id} value={emp.id}>
-                            {emp.name}
-                          </SelectItem>
-                        ))
-                      )}
+                      {employees?.map((emp) => (
+                        <SelectItem key={emp.id} value={emp.name}>
+                          {emp.name} ({emp.role})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="w-32 space-y-2">
+                  <Label>% Comissão</Label>
                   <div className="relative">
                     <Input
                       type="number"
-                      value={comm.percentage || ''}
-                      onChange={(e) => updateCommissionPercent(index, Number(e.target.value))}
-                      placeholder="Percentual"
-                      min={0}
-                      max={100}
+                      value={comm.percentage}
+                      onChange={(e) => updateCommission(index, "percentage", Number(e.target.value))}
+                      className="pr-6"
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</span>
+                    <span className="absolute right-3 top-2.5 text-xs text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <div className="w-40 space-y-2">
+                  <Label>Valor Estimado</Label>
+                  <div className="h-10 px-3 py-2 bg-muted rounded-md text-sm font-medium flex items-center text-muted-foreground border">
+                    R$ {((Number(totalValue) * comm.percentage) / 100).toFixed(2)}
                   </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="mb-0.5 text-muted-foreground hover:text-red-500"
                   onClick={() => removeCommission(index)}
-                  className="text-muted-foreground hover:text-destructive"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             ))}
-            
-            {totalCommissionPercent > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Total: <span className="text-primary font-medium">{totalCommissionPercent}%</span>
-                {totalValue > 0 && (
-                  <span> ({formatCurrency(totalValue * totalCommissionPercent / 100)})</span>
-                )}
-              </p>
-            )}
           </div>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t border-border">
+      <div className="flex justify-end gap-3 pt-6 sticky bottom-0 bg-background/95 backdrop-blur py-4 border-t mt-4">
         <Button variant="outline" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button 
+        <Button
           onClick={handleSave}
-          disabled={!isBalanced || totalValue === 0}
-          className="gold-gradient text-primary-foreground"
+          className="gold-gradient text-primary-foreground font-bold min-w-[150px]"
+          disabled={!totalValue || installments.length === 0}
         >
           Salvar Contrato
         </Button>
