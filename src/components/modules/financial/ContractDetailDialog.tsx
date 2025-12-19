@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, CircleDollarSign, FileText, Pencil, User, X, CalendarIcon } from "lucide-react";
+import { Check, CircleDollarSign, FileText, Pencil, User, X, CalendarIcon, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ContractDetailDialogProps {
   contractId: string | null;
@@ -29,6 +30,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
   const [commissions, setCommissions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Estados de Edição
   const [editingInstallmentId, setEditingInstallmentId] = useState<string | null>(null);
   const [editInstallmentForm, setEditInstallmentForm] = useState<any>({});
 
@@ -64,7 +66,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
 
       const { data: commData, error: commError } = await supabase
         .from("commissions")
-        .select(`*, installments (due_date, status)`)
+        .select(`*, installments (due_date)`)
         .eq("contract_id", contractId)
         .order("created_at", { ascending: true });
 
@@ -85,7 +87,31 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     }
   }
 
-  // --- FUNÇÕES DE EDIÇÃO DE PARCELA (ATUALIZADO) ---
+  // --- AÇÕES RÁPIDAS (BAIXAR) ---
+
+  const quickPayInstallment = async (id: string) => {
+    try {
+      await supabase.from("installments").update({ status: "paid" }).eq("id", id);
+      toast.success("Parcela recebida!");
+      fetchContractDetails();
+      if (onContractUpdated) onContractUpdated();
+    } catch (e) {
+      toast.error("Erro ao baixar parcela.");
+    }
+  };
+
+  const quickPayCommission = async (id: string) => {
+    try {
+      await supabase.from("commissions").update({ status: "paid" }).eq("id", id);
+      toast.success("Comissão paga!");
+      fetchContractDetails();
+      if (onContractUpdated) onContractUpdated();
+    } catch (e) {
+      toast.error("Erro ao pagar comissão.");
+    }
+  };
+
+  // --- EDIÇÃO DE PARCELA ---
 
   const startEditingInstallment = (inst: any) => {
     setEditingInstallmentId(inst.id);
@@ -97,15 +123,9 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     });
   };
 
-  const cancelEditingInstallment = () => {
-    setEditingInstallmentId(null);
-    setEditInstallmentForm({});
-  };
-
   const saveInstallment = async (id: string) => {
     try {
-      // 1. Atualiza a parcela específica
-      const { error: updateError } = await supabase
+      await supabase
         .from("installments")
         .update({
           value: Number(editInstallmentForm.value),
@@ -114,38 +134,23 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
         })
         .eq("id", id);
 
-      if (updateError) throw updateError;
+      // Recalcula total
+      const { data: all } = await supabase.from("installments").select("value").eq("contract_id", contractId);
+      if (all) {
+        const newTotal = all.reduce((acc, curr) => acc + Number(curr.value), 0);
+        await supabase.from("contracts").update({ total_value: newTotal }).eq("id", contractId);
+      }
 
-      // 2. BUSCA TODAS AS PARCELAS PARA RECALCULAR O TOTAL
-      const { data: allInstallments, error: fetchError } = await supabase
-        .from("installments")
-        .select("value")
-        .eq("contract_id", contractId);
-
-      if (fetchError) throw fetchError;
-
-      // Soma os valores
-      const newTotal = allInstallments.reduce((acc, curr) => acc + Number(curr.value), 0);
-
-      // 3. ATUALIZA O VALOR TOTAL DO CONTRATO
-      const { error: contractUpdateError } = await supabase
-        .from("contracts")
-        .update({ total_value: newTotal })
-        .eq("id", contractId);
-
-      if (contractUpdateError) throw contractUpdateError;
-
-      toast.success("Parcela salva e Total do contrato atualizado!");
+      toast.success("Parcela atualizada!");
       setEditingInstallmentId(null);
-      fetchContractDetails(); // Recarrega para mostrar o novo total na tela
+      fetchContractDetails();
       if (onContractUpdated) onContractUpdated();
     } catch (error) {
-      console.error(error);
       toast.error("Erro ao salvar parcela.");
     }
   };
 
-  // --- FUNÇÕES DE EDIÇÃO DE COMISSÃO ---
+  // --- EDIÇÃO DE COMISSÃO ---
 
   const startEditingCommission = (comm: any) => {
     setEditingCommissionId(comm.id);
@@ -153,33 +158,27 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
       value: comm.value,
       percentage: comm.percentage,
       employee_name: comm.employee_name,
+      status: comm.status || "pending", // Agora lê o status do banco
     });
-  };
-
-  const cancelEditingCommission = () => {
-    setEditingCommissionId(null);
-    setEditCommissionForm({});
   };
 
   const saveCommission = async (id: string) => {
     try {
-      const { error } = await supabase
+      await supabase
         .from("commissions")
         .update({
           value: Number(editCommissionForm.value),
           percentage: Number(editCommissionForm.percentage),
           employee_name: editCommissionForm.employee_name,
+          status: editCommissionForm.status,
         })
         .eq("id", id);
-
-      if (error) throw error;
 
       toast.success("Comissão atualizada!");
       setEditingCommissionId(null);
       fetchContractDetails();
       if (onContractUpdated) onContractUpdated();
     } catch (error) {
-      console.error(error);
       toast.error("Erro ao salvar comissão.");
     }
   };
@@ -216,6 +215,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
             <TabsTrigger value="commissions">Comissões & Repasses</TabsTrigger>
           </TabsList>
 
+          {/* === PARCELAS === */}
           <TabsContent value="installments" className="flex-1 flex flex-col mt-4 gap-4 overflow-hidden">
             <div className="flex items-center justify-between p-4 bg-muted/20 rounded-lg border border-border/50 shrink-0">
               <div className="space-y-1">
@@ -235,16 +235,15 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[180px]">Vencimento</TableHead>
+                    <TableHead>Vencimento</TableHead>
                     <TableHead>Valor</TableHead>
-                    <TableHead className="w-[140px]">Status</TableHead>
-                    <TableHead className="text-right w-[100px]">Ação</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {installments.map((inst) => {
                     const isEditing = editingInstallmentId === inst.id;
-
                     return (
                       <TableRow key={inst.id}>
                         <TableCell>
@@ -281,7 +280,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                             <span className="font-medium">{formatDate(inst.due_date)}</span>
                           )}
                         </TableCell>
-
                         <TableCell>
                           {isEditing ? (
                             <Input
@@ -290,13 +288,12 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                               onChange={(e) =>
                                 setEditInstallmentForm({ ...editInstallmentForm, value: e.target.value })
                               }
-                              className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none"
                             />
                           ) : (
                             formatCurrency(inst.value)
                           )}
                         </TableCell>
-
                         <TableCell>
                           {isEditing ? (
                             <Select
@@ -326,7 +323,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                             </Badge>
                           )}
                         </TableCell>
-
                         <TableCell className="text-right">
                           {isEditing ? (
                             <div className="flex justify-end gap-1">
@@ -342,20 +338,41 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                                 size="icon"
                                 variant="ghost"
                                 className="h-8 w-8 text-red-500"
-                                onClick={cancelEditingInstallment}
+                                onClick={() => setEditingInstallmentId(null)}
                               >
                                 <X className="h-4 w-4" />
                               </Button>
                             </div>
                           ) : (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              onClick={() => startEditingInstallment(inst)}
-                            >
-                              <Pencil className="h-4 w-4 text-muted-foreground" />
-                            </Button>
+                            <div className="flex justify-end gap-1">
+                              {inst.status !== "paid" && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-8 w-8 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
+                                        onClick={() => quickPayInstallment(inst.id)}
+                                      >
+                                        <CheckCircle2 className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Marcar como Pago</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                onClick={() => startEditingInstallment(inst)}
+                              >
+                                <Pencil className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
@@ -366,8 +383,8 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
             </div>
           </TabsContent>
 
+          {/* === COMISSÕES === */}
           <TabsContent value="commissions" className="flex-1 flex flex-col mt-4 gap-4 overflow-hidden">
-            {/* ... (código das comissões permanece igual) ... */}
             <div className="p-4 bg-muted/20 rounded-lg border border-border/50 shrink-0">
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 bg-[#E8BD27]/10 rounded-full text-[#E8BD27]">
@@ -375,9 +392,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                 </div>
                 <div>
                   <h4 className="font-semibold">Resumo de Comissões</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Valores a serem repassados conforme o recebimento das parcelas.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Gerencie os repasses aos parceiros e agentes.</p>
                 </div>
               </div>
             </div>
@@ -387,23 +402,22 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                 <TableHeader>
                   <TableRow>
                     <TableHead>Beneficiário</TableHead>
-                    <TableHead className="w-[100px]">%</TableHead>
+                    <TableHead className="w-[80px]">%</TableHead>
                     <TableHead>Valor</TableHead>
-                    <TableHead>Status Ref.</TableHead>
-                    <TableHead className="text-right w-[100px]">Ação</TableHead>
+                    <TableHead className="w-[140px]">Status</TableHead>
+                    <TableHead className="text-right w-[100px]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {commissions.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground h-24">
-                        Este contrato não possui comissões cadastradas.
+                        Nenhuma comissão cadastrada.
                       </TableCell>
                     </TableRow>
                   ) : (
                     commissions.map((comm) => {
                       const isEditing = editingCommissionId === comm.id;
-
                       return (
                         <TableRow key={comm.id}>
                           <TableCell>
@@ -419,7 +433,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                               <div className="font-medium">{comm.employee_name}</div>
                             )}
                           </TableCell>
-
                           <TableCell>
                             {isEditing ? (
                               <Input
@@ -428,13 +441,12 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                                 onChange={(e) =>
                                   setEditCommissionForm({ ...editCommissionForm, percentage: e.target.value })
                                 }
-                                className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none"
                               />
                             ) : (
                               <span className="text-muted-foreground">{comm.percentage}%</span>
                             )}
                           </TableCell>
-
                           <TableCell>
                             {isEditing ? (
                               <Input
@@ -443,30 +455,40 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                                 onChange={(e) =>
                                   setEditCommissionForm({ ...editCommissionForm, value: e.target.value })
                                 }
-                                className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none"
                               />
                             ) : (
                               <span className="text-red-400 font-medium">{formatCurrency(comm.value)}</span>
                             )}
                           </TableCell>
-
                           <TableCell>
-                            {comm.installments ? (
+                            {isEditing ? (
+                              <Select
+                                value={editCommissionForm.status}
+                                onValueChange={(val) => setEditCommissionForm({ ...editCommissionForm, status: val })}
+                              >
+                                <SelectTrigger className="h-8 w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pending">Pendente</SelectItem>
+                                  <SelectItem value="paid">Pago</SelectItem>
+                                  <SelectItem value="cancelled">Cancelado</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
                               <Badge
                                 variant="outline"
                                 className={
-                                  comm.installments.status === "paid"
+                                  comm.status === "paid"
                                     ? "border-emerald-500 text-emerald-500 bg-emerald-500/10"
                                     : "border-yellow-500 text-yellow-600 bg-yellow-500/10"
                                 }
                               >
-                                {comm.installments.status === "paid" ? "Liberado" : "Aguardando"}
+                                {comm.status === "paid" ? "Pago" : "Pendente"}
                               </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
                             )}
                           </TableCell>
-
                           <TableCell className="text-right">
                             {isEditing ? (
                               <div className="flex justify-end gap-1">
@@ -482,20 +504,41 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                                   size="icon"
                                   variant="ghost"
                                   className="h-8 w-8 text-red-500"
-                                  onClick={cancelEditingCommission}
+                                  onClick={() => setEditingCommissionId(null)}
                                 >
                                   <X className="h-4 w-4" />
                                 </Button>
                               </div>
                             ) : (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8"
-                                onClick={() => startEditingCommission(comm)}
-                              >
-                                <Pencil className="h-4 w-4 text-muted-foreground" />
-                              </Button>
+                              <div className="flex justify-end gap-1">
+                                {comm.status !== "paid" && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-8 w-8 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
+                                          onClick={() => quickPayCommission(comm.id)}
+                                        >
+                                          <CheckCircle2 className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Marcar como Pago</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  onClick={() => startEditingCommission(comm)}
+                                >
+                                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                                </Button>
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
