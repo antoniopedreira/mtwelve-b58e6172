@@ -25,7 +25,6 @@ export function ExpensesTable() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Estados para edição e exclusão
   const [editingExpense, setEditingExpense] = useState<any>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -37,7 +36,7 @@ export function ExpensesTable() {
   async function fetchExpenses() {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from("expenses").select("*").order("due_date", { ascending: false }); // Traz os mais recentes primeiro
+      const { data, error } = await supabase.from("expenses").select("*").order("due_date", { ascending: false }); // Traz por data primeiro
 
       if (error) throw error;
       setExpenses(data || []);
@@ -72,7 +71,7 @@ export function ExpensesTable() {
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
-  // --- LÓGICA DE AGRUPAMENTO ---
+  // --- LÓGICA DE AGRUPAMENTO E ORDENAÇÃO ---
   const groupedExpenses = useMemo(() => {
     // 1. Filtra pela busca
     const filtered = expenses.filter((exp) => exp.description.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -81,13 +80,8 @@ export function ExpensesTable() {
     const groups: Record<string, { label: string; items: any[]; total: number }> = {};
 
     filtered.forEach((expense) => {
-      // Truque do T12:00:00 para garantir que o dia fique correto independente do fuso
       const dateObj = new Date(expense.due_date + "T12:00:00");
-
-      // Chave para ordenação: "2025-12"
       const key = format(dateObj, "yyyy-MM");
-
-      // Label para exibição: "Dezembro 2025"
       const label = format(dateObj, "MMMM yyyy", { locale: ptBR });
       const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
 
@@ -99,15 +93,26 @@ export function ExpensesTable() {
       groups[key].total += Number(expense.amount);
     });
 
+    // 3. Ordena dentro de cada grupo: Pendente em cima, Pago em baixo
+    Object.keys(groups).forEach((key) => {
+      groups[key].items.sort((a, b) => {
+        // Se 'a' é pago e 'b' é pendente, 'a' vai pra baixo (retorna 1)
+        if (a.status === "paid" && b.status !== "paid") return 1;
+        // Se 'a' é pendente e 'b' é pago, 'a' sobe (retorna -1)
+        if (a.status !== "paid" && b.status === "paid") return -1;
+        // Se forem iguais, mantém a ordem de data (que já veio do banco)
+        return 0;
+      });
+    });
+
     return groups;
   }, [expenses, searchTerm]);
 
-  // Ordena as chaves dos meses (do mais recente para o mais antigo)
+  // Ordena os meses (mais recentes primeiro)
   const sortedMonthKeys = Object.keys(groupedExpenses).sort().reverse();
 
   return (
     <div className="space-y-6">
-      {/* Filtros e Busca */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -130,13 +135,11 @@ export function ExpensesTable() {
           <p>Nenhuma despesa encontrada.</p>
         </div>
       ) : (
-        // Renderiza um bloco para cada mês
         sortedMonthKeys.map((monthKey) => {
           const group = groupedExpenses[monthKey];
 
           return (
             <div key={monthKey} className="space-y-2">
-              {/* Cabeçalho do Mês */}
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-lg font-semibold flex items-center gap-2 text-[#E8BD27]">
                   <span className="w-2 h-2 rounded-full bg-[#E8BD27]" />
@@ -147,7 +150,6 @@ export function ExpensesTable() {
                 </span>
               </div>
 
-              {/* Tabela do Mês */}
               <div className="rounded-xl border border-border/50 overflow-hidden bg-card/50">
                 <Table>
                   <TableHeader>
@@ -201,7 +203,6 @@ export function ExpensesTable() {
         })
       )}
 
-      {/* Modal de Confirmação de Exclusão */}
       <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -219,13 +220,12 @@ export function ExpensesTable() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal de Edição (Reaproveitado) */}
       <NewExpenseDialog
         openProp={isEditModalOpen}
         onOpenChangeProp={setIsEditModalOpen}
         expenseToEdit={editingExpense}
         onSuccess={() => {
-          fetchExpenses(); // Recarrega a lista após editar
+          fetchExpenses();
         }}
       />
     </div>
