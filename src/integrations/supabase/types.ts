@@ -211,6 +211,7 @@ export type Database = {
           id: string;
           status: Database["public"]["Enums"]["transaction_status"];
           value: number;
+          transaction_fee: number;
         };
         Insert: {
           contract_id: string;
@@ -219,6 +220,7 @@ export type Database = {
           id?: string;
           status?: Database["public"]["Enums"]["transaction_status"];
           value: number;
+          transaction_fee: number;
         };
         Update: {
           contract_id?: string;
@@ -227,6 +229,7 @@ export type Database = {
           id?: string;
           status?: Database["public"]["Enums"]["transaction_status"];
           value?: number;
+          transaction_fee: number;
         };
         Relationships: [
           {
