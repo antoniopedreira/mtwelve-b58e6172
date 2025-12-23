@@ -12,20 +12,14 @@ export interface Client {
   name: string;
   email: string | null;
   phone: string | null;
-
-  // Novos campos
   school: string | null;
   nationality: string | null;
-
-  // Campos do Sistema
   stage: PipelineStage;
   value: number | null;
   avatar_url: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
-
-  // Compatibilidade opcional (caso algum código antigo use)
   sport?: string;
   status?: string;
 }
@@ -46,7 +40,8 @@ export interface Contract {
   notes: string | null;
   created_at: string;
   updated_at: string;
-  clients?: Client; // Para Joins
+  transaction_fee_percentage?: number; // Agora opcional/legado, usamos o valor na parcela
+  clients?: Client;
 }
 
 // Parcela (Financeiro)
@@ -56,6 +51,7 @@ export interface Installment {
   value: number;
   due_date: string;
   status: TransactionStatus;
+  transaction_fee: number; // <--- NOVO CAMPO
   created_at?: string;
 }
 
@@ -67,6 +63,7 @@ export interface Commission {
   employee_name: string;
   percentage: number;
   value: number;
+  status: TransactionStatus; // <--- NOVO CAMPO
   created_at?: string;
 }
 
