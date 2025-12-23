@@ -17,6 +17,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NewClientForm } from "@/components/modules/crm/NewClientDialog";
 
+// Definição local para o tipo de parcela com taxa (usado no builder)
+type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee?: number };
+
 export default function Financeiro() {
   const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
@@ -30,13 +33,10 @@ export default function Financeiro() {
   const { data: activeContracts, isLoading: contractsLoading, refetch: refetchContracts } = useActiveContracts();
   const { data: completedContracts, isLoading: completedLoading, refetch: refetchCompleted } = useCompletedContracts();
 
-  // Estado para progresso de cada contrato
   const [contractProgress, setContractProgress] = useState<Record<string, { paid: number; total: number }>>({});
 
-  // Buscar progresso dos contratos
   useEffect(() => {
     const fetchProgress = async () => {
-      // Junta as listas para buscar progresso de todos (ativos e concluídos)
       const allContracts = [...(activeContracts || []), ...(completedContracts || [])];
       if (allContracts.length === 0) return;
 
@@ -88,10 +88,12 @@ export default function Financeiro() {
     }
   };
 
+  // --- CORREÇÃO AQUI: Tipagem atualizada para bater com o ContractBuilder ---
   const handleSaveContract = async (data: {
     totalValue: number;
-    installments: Omit<Installment, "id" | "contract_id">[];
-    commissions: Omit<Commission, "id" | "contract_id" | "value">[];
+    installments: InstallmentWithFee[];
+    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[];
+    transactionFee: number;
   }) => {
     if (!selectedClient) return;
 
@@ -146,7 +148,6 @@ export default function Financeiro() {
     setIsDetailOpen(true);
   };
 
-  // Renderiza Cards (Usado tanto para Ativos quanto para Concluídos)
   const renderContractCard = (contract: ContractWithClient, isCompleted = false) => {
     const progress = contractProgress[contract.id] || { paid: 0, total: Number(contract.total_value) };
     const percentage = progress.total > 0 ? (progress.paid / progress.total) * 100 : 0;
@@ -226,7 +227,7 @@ export default function Financeiro() {
         </div>
       </div>
 
-      {/* Abas Principais (Reduzidas para 3) */}
+      {/* Abas Principais */}
       <Tabs defaultValue="dre" className="space-y-6">
         <TabsList className="bg-muted/50 p-1 rounded-xl w-full md:w-auto grid grid-cols-3 md:flex">
           <TabsTrigger value="dre" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm">
@@ -246,14 +247,11 @@ export default function Financeiro() {
           </TabsTrigger>
         </TabsList>
 
-        {/* --- ABA 1: DRE --- */}
         <TabsContent value="dre" className="space-y-4 focus-visible:outline-none">
           <FinancialSummary />
         </TabsContent>
 
-        {/* --- ABA 2: GESTÃO DE CONTRATOS (Ativos + Concluídos) --- */}
         <TabsContent value="contracts" className="space-y-4 focus-visible:outline-none">
-          {/* Sub-abas internas para organizar Ativos vs Concluídos */}
           <Tabs defaultValue="active" className="w-full">
             <div className="flex items-center justify-between mb-4">
               <TabsList className="bg-transparent border border-border/50 p-0 h-9 rounded-lg">
@@ -274,7 +272,6 @@ export default function Financeiro() {
               </TabsList>
             </div>
 
-            {/* Lista de Contratos Ativos */}
             <TabsContent value="active" className="mt-0">
               {contractsLoading ? (
                 <div className="flex justify-center py-12">
@@ -283,7 +280,6 @@ export default function Financeiro() {
               ) : activeContracts && activeContracts.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {activeContracts.map((c) => renderContractCard(c, false))}
-                  {/* Atalho Novo Contrato */}
                   <button
                     onClick={handleOpenNewContract}
                     className="p-5 rounded-xl border-2 border-dashed border-border/50 hover:border-[#E8BD27]/50 hover:bg-muted/5 transition-all flex flex-col items-center justify-center min-h-[240px] text-muted-foreground hover:text-[#E8BD27] gap-3"
@@ -305,7 +301,6 @@ export default function Financeiro() {
               )}
             </TabsContent>
 
-            {/* Lista de Contratos Concluídos */}
             <TabsContent value="completed" className="mt-0">
               {completedLoading ? (
                 <div className="flex justify-center py-12">
@@ -326,13 +321,11 @@ export default function Financeiro() {
           </Tabs>
         </TabsContent>
 
-        {/* --- ABA 3: GESTÃO DE DESPESAS --- */}
         <TabsContent value="expenses" className="space-y-4 focus-visible:outline-none">
           <ExpensesTable />
         </TabsContent>
       </Tabs>
 
-      {/* --- MODALS --- */}
       <ClientSelectorDialog
         open={isClientSelectorOpen}
         onOpenChange={setIsClientSelectorOpen}
