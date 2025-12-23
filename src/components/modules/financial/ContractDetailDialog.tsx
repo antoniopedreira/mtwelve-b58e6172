@@ -1,12 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, CircleDollarSign, FileText, Pencil, User, X, CalendarIcon, CheckCircle2 } from "lucide-react";
+import {
+  Check,
+  CircleDollarSign,
+  FileText,
+  Pencil,
+  User,
+  X,
+  CalendarIcon,
+  CheckCircle2,
+  CalendarDays,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -72,6 +81,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
 
       if (commError) throw commError;
 
+      // Ordenação básica
       const sortedCommissions = (commData || []).sort((a: any, b: any) => {
         const dateA = a.installments?.due_date || a.created_at;
         const dateB = b.installments?.due_date || b.created_at;
@@ -87,7 +97,35 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     }
   }
 
-  // --- AÇÕES RÁPIDAS (BAIXAR) ---
+  // --- AGRUPAMENTO DE COMISSÕES POR MÊS ---
+  const commissionsGroups = useMemo(() => {
+    const groupsMap = new Map<string, { label: string; dateVal: number; items: any[] }>();
+
+    commissions.forEach((comm) => {
+      // Define a data de referência (da parcela ou criação)
+      const dateStr = comm.installments?.due_date || comm.created_at || new Date().toISOString();
+      // Ajuste de fuso horário
+      const dateObj = new Date(dateStr.includes("T") ? dateStr : dateStr + "T12:00:00");
+
+      const key = format(dateObj, "yyyy-MM"); // Chave para ordenação
+      const label = format(dateObj, "MMMM yyyy", { locale: ptBR }); // Label visual
+      const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, {
+          label: capitalizedLabel,
+          dateVal: dateObj.getTime(),
+          items: [],
+        });
+      }
+      groupsMap.get(key)!.items.push(comm);
+    });
+
+    // Retorna array ordenado por data
+    return Array.from(groupsMap.values()).sort((a, b) => a.dateVal - b.dateVal);
+  }, [commissions]);
+
+  // --- AÇÕES RÁPIDAS ---
 
   const quickPayInstallment = async (id: string) => {
     try {
@@ -120,6 +158,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
       value: inst.value,
       due_date: dateObj,
       status: inst.status,
+      transaction_fee: inst.transaction_fee || 0,
     });
   };
 
@@ -131,10 +170,11 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
           value: Number(editInstallmentForm.value),
           due_date: format(editInstallmentForm.due_date, "yyyy-MM-dd"),
           status: editInstallmentForm.status,
+          transaction_fee: Number(editInstallmentForm.transaction_fee),
         })
         .eq("id", id);
 
-      // Recalcula total
+      // Recalcula total do contrato
       const { data: all } = await supabase.from("installments").select("value").eq("contract_id", contractId);
       if (all) {
         const newTotal = all.reduce((acc, curr) => acc + Number(curr.value), 0);
@@ -158,7 +198,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
       value: comm.value,
       percentage: comm.percentage,
       employee_name: comm.employee_name,
-      status: comm.status || "pending", // Agora lê o status do banco
+      status: comm.status || "pending",
     });
   };
 
@@ -192,6 +232,9 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     return format(date, "dd/MM/yyyy", { locale: ptBR });
   };
 
+  const noSpinnerClass =
+    "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
   if (!contract) return null;
 
   return (
@@ -215,7 +258,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
             <TabsTrigger value="commissions">Comissões & Repasses</TabsTrigger>
           </TabsList>
 
-          {/* === PARCELAS === */}
+          {/* === ABA 1: PARCELAS === */}
           <TabsContent value="installments" className="flex-1 flex flex-col mt-4 gap-4 overflow-hidden">
             <div className="flex items-center justify-between p-4 bg-muted/20 rounded-lg border border-border/50 shrink-0">
               <div className="space-y-1">
@@ -235,10 +278,11 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Vencimento</TableHead>
-                    <TableHead>Valor</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                    <TableHead className="w-[120px]">Vencimento</TableHead>
+                    <TableHead className="w-[120px]">Valor</TableHead>
+                    <TableHead className="w-[100px]">Taxa</TableHead>
+                    <TableHead className="w-[120px]">Status</TableHead>
+                    <TableHead className="text-right w-[100px]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -246,6 +290,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                     const isEditing = editingInstallmentId === inst.id;
                     return (
                       <TableRow key={inst.id}>
+                        {/* DATA */}
                         <TableCell>
                           {isEditing ? (
                             <Popover>
@@ -280,6 +325,8 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                             <span className="font-medium">{formatDate(inst.due_date)}</span>
                           )}
                         </TableCell>
+
+                        {/* VALOR */}
                         <TableCell>
                           {isEditing ? (
                             <Input
@@ -288,12 +335,32 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                               onChange={(e) =>
                                 setEditInstallmentForm({ ...editInstallmentForm, value: e.target.value })
                               }
-                              className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none"
+                              className={`h-8 ${noSpinnerClass}`}
                             />
                           ) : (
                             formatCurrency(inst.value)
                           )}
                         </TableCell>
+
+                        {/* TAXA (EDITÁVEL) */}
+                        <TableCell>
+                          {isEditing ? (
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                value={editInstallmentForm.transaction_fee}
+                                onChange={(e) =>
+                                  setEditInstallmentForm({ ...editInstallmentForm, transaction_fee: e.target.value })
+                                }
+                                className={`h-8 pr-2 text-red-400 ${noSpinnerClass}`}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-red-400 text-sm">{formatCurrency(inst.transaction_fee || 0)}</span>
+                          )}
+                        </TableCell>
+
+                        {/* STATUS */}
                         <TableCell>
                           {isEditing ? (
                             <Select
@@ -323,6 +390,8 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                             </Badge>
                           )}
                         </TableCell>
+
+                        {/* AÇÕES */}
                         <TableCell className="text-right">
                           {isEditing ? (
                             <div className="flex justify-end gap-1">
@@ -383,7 +452,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
             </div>
           </TabsContent>
 
-          {/* === COMISSÕES === */}
+          {/* === ABA 2: COMISSÕES (AGRUPADAS POR MÊS) === */}
           <TabsContent value="commissions" className="flex-1 flex flex-col mt-4 gap-4 overflow-hidden">
             <div className="p-4 bg-muted/20 rounded-lg border border-border/50 shrink-0">
               <div className="flex items-center gap-3 mb-2">
@@ -392,7 +461,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                 </div>
                 <div>
                   <h4 className="font-semibold">Resumo de Comissões</h4>
-                  <p className="text-sm text-muted-foreground">Gerencie os repasses aos parceiros e agentes.</p>
+                  <p className="text-sm text-muted-foreground">Repasses aos parceiros organizados por competência.</p>
                 </div>
               </div>
             </div>
@@ -401,151 +470,169 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Beneficiário</TableHead>
-                    <TableHead className="w-[80px]">%</TableHead>
+                    <TableHead className="w-[200px]">Beneficiário</TableHead>
+                    <TableHead className="w-[100px]">%</TableHead>
                     <TableHead>Valor</TableHead>
                     <TableHead className="w-[140px]">Status</TableHead>
                     <TableHead className="text-right w-[100px]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {commissions.length === 0 ? (
+
+                {commissionsGroups.length === 0 ? (
+                  <TableBody>
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground h-24">
                         Nenhuma comissão cadastrada.
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    commissions.map((comm) => {
-                      const isEditing = editingCommissionId === comm.id;
-                      return (
-                        <TableRow key={comm.id}>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                value={editCommissionForm.employee_name}
-                                onChange={(e) =>
-                                  setEditCommissionForm({ ...editCommissionForm, employee_name: e.target.value })
-                                }
-                                className="h-8"
-                              />
-                            ) : (
-                              <div className="font-medium">{comm.employee_name}</div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                type="number"
-                                value={editCommissionForm.percentage}
-                                onChange={(e) =>
-                                  setEditCommissionForm({ ...editCommissionForm, percentage: e.target.value })
-                                }
-                                className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                            ) : (
-                              <span className="text-muted-foreground">{comm.percentage}%</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                type="number"
-                                value={editCommissionForm.value}
-                                onChange={(e) =>
-                                  setEditCommissionForm({ ...editCommissionForm, value: e.target.value })
-                                }
-                                className="h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                            ) : (
-                              <span className="text-red-400 font-medium">{formatCurrency(comm.value)}</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Select
-                                value={editCommissionForm.status}
-                                onValueChange={(val) => setEditCommissionForm({ ...editCommissionForm, status: val })}
-                              >
-                                <SelectTrigger className="h-8 w-full">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="pending">Pendente</SelectItem>
-                                  <SelectItem value="paid">Pago</SelectItem>
-                                  <SelectItem value="cancelled">Cancelado</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className={
-                                  comm.status === "paid"
-                                    ? "border-emerald-500 text-emerald-500 bg-emerald-500/10"
-                                    : "border-yellow-500 text-yellow-600 bg-yellow-500/10"
-                                }
-                              >
-                                {comm.status === "paid" ? "Pago" : "Pendente"}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {isEditing ? (
-                              <div className="flex justify-end gap-1">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-8 w-8 text-green-500"
-                                  onClick={() => saveCommission(comm.id)}
-                                >
-                                  <Check className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-8 w-8 text-red-500"
-                                  onClick={() => setEditingCommissionId(null)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex justify-end gap-1">
-                                {comm.status !== "paid" && (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          className="h-8 w-8 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
-                                          onClick={() => quickPayCommission(comm.id)}
-                                        >
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Marcar como Pago</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                )}
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-8 w-8"
-                                  onClick={() => startEditingCommission(comm)}
-                                >
-                                  <Pencil className="h-4 w-4 text-muted-foreground" />
-                                </Button>
-                              </div>
-                            )}
+                  </TableBody>
+                ) : (
+                  <TableBody>
+                    {commissionsGroups.map((group) => (
+                      <>
+                        {/* CABEÇALHO DO MÊS */}
+                        <TableRow key={group.label} className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell colSpan={5} className="py-2 font-semibold text-primary flex items-center gap-2">
+                            <CalendarDays className="h-4 w-4" />
+                            {group.label}
                           </TableCell>
                         </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
+
+                        {/* ITENS DO MÊS */}
+                        {group.items.map((comm) => {
+                          const isEditing = editingCommissionId === comm.id;
+                          return (
+                            <TableRow key={comm.id} className="hover:bg-muted/5">
+                              <TableCell>
+                                {isEditing ? (
+                                  <Input
+                                    value={editCommissionForm.employee_name}
+                                    onChange={(e) =>
+                                      setEditCommissionForm({ ...editCommissionForm, employee_name: e.target.value })
+                                    }
+                                    className={`h-8 ${noSpinnerClass}`}
+                                  />
+                                ) : (
+                                  <div className="font-medium ml-4">{comm.employee_name}</div>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {isEditing ? (
+                                  <Input
+                                    type="number"
+                                    value={editCommissionForm.percentage}
+                                    onChange={(e) =>
+                                      setEditCommissionForm({ ...editCommissionForm, percentage: e.target.value })
+                                    }
+                                    className={`h-8 ${noSpinnerClass}`}
+                                  />
+                                ) : (
+                                  <span className="text-muted-foreground">{comm.percentage}%</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {isEditing ? (
+                                  <Input
+                                    type="number"
+                                    value={editCommissionForm.value}
+                                    onChange={(e) =>
+                                      setEditCommissionForm({ ...editCommissionForm, value: e.target.value })
+                                    }
+                                    className={`h-8 ${noSpinnerClass}`}
+                                  />
+                                ) : (
+                                  <span className="text-red-400 font-medium">{formatCurrency(comm.value)}</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {isEditing ? (
+                                  <Select
+                                    value={editCommissionForm.status}
+                                    onValueChange={(val) =>
+                                      setEditCommissionForm({ ...editCommissionForm, status: val })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8 w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pendente</SelectItem>
+                                      <SelectItem value="paid">Pago</SelectItem>
+                                      <SelectItem value="cancelled">Cancelado</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      comm.status === "paid"
+                                        ? "border-emerald-500 text-emerald-500 bg-emerald-500/10"
+                                        : "border-yellow-500 text-yellow-600 bg-yellow-500/10"
+                                    }
+                                  >
+                                    {comm.status === "paid" ? "Pago" : "Pendente"}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {isEditing ? (
+                                  <div className="flex justify-end gap-1">
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8 text-green-500"
+                                      onClick={() => saveCommission(comm.id)}
+                                    >
+                                      <Check className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8 text-red-500"
+                                      onClick={() => setEditingCommissionId(null)}
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-end gap-1">
+                                    {comm.status !== "paid" && (
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              className="h-8 w-8 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
+                                              onClick={() => quickPayCommission(comm.id)}
+                                            >
+                                              <CheckCircle2 className="h-4 w-4" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Marcar como Pago</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    )}
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8"
+                                      onClick={() => startEditingCommission(comm)}
+                                    >
+                                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </>
+                    ))}
+                  </TableBody>
+                )}
               </Table>
             </div>
           </TabsContent>
