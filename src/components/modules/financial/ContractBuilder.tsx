@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { format, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarIcon, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import { CalendarIcon, Plus, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,12 +13,14 @@ import { Installment, Commission } from "@/types";
 import { Separator } from "@/components/ui/separator";
 import { useEmployees } from "@/hooks/useEmployees";
 
-// CORREÇÃO 1: Adicionado "installment_id" no Omit para evitar o erro de tipo
+// Estendemos o tipo Installment localmente para incluir transaction_fee
+type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee: number };
+
 interface ContractBuilderProps {
   client?: { id: string; name: string };
   onSave: (data: {
     totalValue: number;
-    installments: Omit<Installment, "id" | "contract_id">[];
+    installments: InstallmentWithFee[];
     commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[];
   }) => void;
   onCancel: () => void;
@@ -29,9 +31,10 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   const [installmentsCount, setInstallmentsCount] = useState<string>("1");
   const [startDate, setStartDate] = useState<Date>(new Date());
 
-  const [installments, setInstallments] = useState<Omit<Installment, "id" | "contract_id">[]>([]);
+  // Taxa Padrão (para preencher automaticamente ao gerar)
+  const [defaultFee, setDefaultFee] = useState<string>("0");
 
-  // CORREÇÃO 2: Adicionado "installment_id" no Omit do estado também
+  const [installments, setInstallments] = useState<InstallmentWithFee[]>([]);
   const [commissions, setCommissions] = useState<Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[]>(
     [],
   );
@@ -44,6 +47,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   const generateInstallments = () => {
     const value = Number(totalValue);
     const count = Number(installmentsCount);
+    const fee = Number(defaultFee);
 
     if (!value || !count) return;
 
@@ -52,8 +56,10 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
       value: Number(installmentValue.toFixed(2)),
       due_date: format(addMonths(startDate, index), "yyyy-MM-dd"),
       status: "pending" as const,
+      transaction_fee: fee, // Aplica a taxa padrão
     }));
 
+    // Ajuste de centavos
     const currentSum = newInstallments.reduce((acc, curr) => acc + curr.value, 0);
     const diff = value - currentSum;
     if (diff !== 0) {
@@ -63,7 +69,8 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
     setInstallments(newInstallments);
   };
 
-  const updateInstallment = (index: number, field: keyof (typeof installments)[0], value: any) => {
+  // Função genérica para atualizar qualquer campo da parcela (Valor, Data ou Taxa)
+  const updateInstallment = (index: number, field: keyof InstallmentWithFee, value: any) => {
     const newInstallments = [...installments];
     newInstallments[index] = { ...newInstallments[index], [field]: value };
     setInstallments(newInstallments);
@@ -111,9 +118,10 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* GRID DE CONFIGURAÇÃO */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="space-y-2">
-          <Label>Valor Total do Contrato (R$)</Label>
+          <Label>Valor Total (R$)</Label>
           <Input
             type="number"
             placeholder="0.00"
@@ -123,7 +131,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
           />
         </div>
         <div className="space-y-2">
-          <Label>Quantidade de Parcelas</Label>
+          <Label>Qtd. Parcelas</Label>
           <Input
             type="number"
             min="1"
@@ -132,8 +140,24 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
             className={noSpinnerClass}
           />
         </div>
+
+        {/* TAXA PADRÃO (VALOR) */}
         <div className="space-y-2">
-          <Label>Data da 1ª Parcela</Label>
+          <Label>Taxa Padrão (R$)</Label>
+          <div className="relative">
+            <Input
+              type="number"
+              placeholder="0.00"
+              value={defaultFee}
+              onChange={(e) => setDefaultFee(e.target.value)}
+              className={noSpinnerClass}
+            />
+            <span className="absolute right-3 top-2.5 text-xs text-muted-foreground">R$</span>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Data 1ª Parcela</Label>
           <Popover>
             <PopoverTrigger asChild>
               <Button
@@ -165,11 +189,14 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
       <Separator />
 
+      {/* LISTA DE PARCELAS */}
       <div className="space-y-4">
-        <h3 className="font-semibold text-lg flex items-center gap-2">
-          <span className="w-1 h-5 bg-primary rounded-full" />
-          Parcelamento
-        </h3>
+        <div className="flex justify-between items-center">
+          <h3 className="font-semibold text-lg flex items-center gap-2">
+            <span className="w-1 h-5 bg-primary rounded-full" />
+            Parcelamento
+          </h3>
+        </div>
 
         {installments.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
@@ -177,24 +204,29 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
           </div>
         ) : (
           <div className="grid gap-3">
+            {/* CABEÇALHO DA LISTA */}
+            <div className="grid grid-cols-12 gap-4 px-3 text-xs font-medium text-muted-foreground uppercase">
+              <div className="col-span-1">#</div>
+              <div className="col-span-4">Vencimento</div>
+              <div className="col-span-4">Valor (R$)</div>
+              <div className="col-span-3 text-right">Taxa (R$)</div>
+            </div>
+
             {installments.map((inst, index) => (
               <div
                 key={index}
-                className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-3 bg-card border rounded-lg hover:border-primary/30 transition-colors"
+                className="grid grid-cols-12 gap-4 items-center p-3 bg-card border rounded-lg hover:border-primary/30 transition-colors"
               >
-                <div className="md:col-span-1 text-sm font-medium text-muted-foreground text-center md:text-left">
-                  #{index + 1}
-                </div>
-                <div className="md:col-span-5">
+                {/* ÍNDICE */}
+                <div className="col-span-1 text-sm font-medium text-muted-foreground">{index + 1}</div>
+
+                {/* DATA */}
+                <div className="col-span-4">
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant={"outline"} className="w-full justify-start text-left font-normal">
+                      <Button variant={"outline"} className="w-full justify-start text-left font-normal h-9">
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {inst.due_date ? (
-                          format(new Date(inst.due_date + "T12:00:00"), "dd/MM/yyyy")
-                        ) : (
-                          <span>Data</span>
-                        )}
+                        {inst.due_date ? format(new Date(inst.due_date + "T12:00:00"), "dd/MM/yy") : <span>Data</span>}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -207,23 +239,47 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                     </PopoverContent>
                   </Popover>
                 </div>
-                <div className="md:col-span-6">
+
+                {/* VALOR DA PARCELA */}
+                <div className="col-span-4">
                   <Input
                     type="number"
                     value={inst.value}
                     onChange={(e) => updateInstallment(index, "value", Number(e.target.value))}
-                    className={`font-medium ${noSpinnerClass}`}
+                    className={`font-medium h-9 ${noSpinnerClass}`}
                   />
+                </div>
+
+                {/* TAXA DA PARCELA (EDITÁVEL) */}
+                <div className="col-span-3">
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      value={inst.transaction_fee}
+                      onChange={(e) => updateInstallment(index, "transaction_fee", Number(e.target.value))}
+                      className={`h-9 text-right pr-2 text-red-400 ${noSpinnerClass}`}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
 
-            <div className="flex justify-end mt-2 text-sm text-muted-foreground">
-              Total Parcelado:{" "}
-              <span className="font-bold text-foreground ml-2">
-                {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-                  installments.reduce((a, b) => a + b.value, 0),
-                )}
+            <div className="flex justify-end mt-2 text-sm text-muted-foreground gap-4">
+              <span>
+                Total Taxas:{" "}
+                <span className="text-red-400">
+                  {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                    installments.reduce((a, b) => a + (b.transaction_fee || 0), 0),
+                  )}
+                </span>
+              </span>
+              <span>
+                Total Parcelado:{" "}
+                <span className="font-bold text-foreground">
+                  {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                    installments.reduce((a, b) => a + b.value, 0),
+                  )}
+                </span>
               </span>
             </div>
           </div>
@@ -232,6 +288,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
       <Separator />
 
+      {/* COMISSÕES */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-lg flex items-center gap-2">
