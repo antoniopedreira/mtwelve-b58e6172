@@ -6,7 +6,6 @@ export type TransactionType = "income" | "expense";
 
 // --- Interfaces Principais ---
 
-// Cliente (CRM)
 export interface Client {
   id: string;
   name: string;
@@ -24,14 +23,12 @@ export interface Client {
   status?: string;
 }
 
-// Coluna do Pipeline (Kanban)
 export interface PipelineColumn {
   id: PipelineStage;
   title: string;
   clients: Client[];
 }
 
-// Contrato
 export interface Contract {
   id: string;
   client_id: string;
@@ -40,22 +37,20 @@ export interface Contract {
   notes: string | null;
   created_at: string;
   updated_at: string;
-  transaction_fee_percentage?: number; // Agora opcional/legado, usamos o valor na parcela
+  transaction_fee_percentage?: number;
   clients?: Client;
 }
 
-// Parcela (Financeiro)
 export interface Installment {
   id: string;
   contract_id: string;
   value: number;
   due_date: string;
   status: TransactionStatus;
-  transaction_fee: number; // <--- NOVO CAMPO
+  transaction_fee: number; // Campo novo
   created_at?: string;
 }
 
-// Comissão (Financeiro)
 export interface Commission {
   id: string;
   contract_id: string;
@@ -63,11 +58,10 @@ export interface Commission {
   employee_name: string;
   percentage: number;
   value: number;
-  status: TransactionStatus; // <--- NOVO CAMPO
+  status: TransactionStatus; // Campo novo
   created_at?: string;
 }
 
-// Transação Genérica (Extrato)
 export interface Transaction {
   id: string;
   contract_id: string | null;

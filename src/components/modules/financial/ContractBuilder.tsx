@@ -13,7 +13,7 @@ import { Installment, Commission } from "@/types";
 import { Separator } from "@/components/ui/separator";
 import { useEmployees } from "@/hooks/useEmployees";
 
-// Estendemos o tipo Installment localmente para incluir transaction_fee
+// Estendemos o tipo Installment localmente para garantir transaction_fee
 type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee: number };
 
 interface ContractBuilderProps {
@@ -21,7 +21,8 @@ interface ContractBuilderProps {
   onSave: (data: {
     totalValue: number;
     installments: InstallmentWithFee[];
-    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[];
+    // CORREÇÃO: Omitimos 'status' aqui também para evitar erro de tipo
+    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[];
   }) => void;
   onCancel: () => void;
 }
@@ -31,13 +32,15 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   const [installmentsCount, setInstallmentsCount] = useState<string>("1");
   const [startDate, setStartDate] = useState<Date>(new Date());
 
-  // Taxa Padrão (para preencher automaticamente ao gerar)
+  // Taxa Padrão (apenas para preenchimento inicial)
   const [defaultFee, setDefaultFee] = useState<string>("0");
 
   const [installments, setInstallments] = useState<InstallmentWithFee[]>([]);
-  const [commissions, setCommissions] = useState<Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[]>(
-    [],
-  );
+
+  // CORREÇÃO: Omitimos 'status' do estado para bater com a inicialização
+  const [commissions, setCommissions] = useState<
+    Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[]
+  >([]);
 
   const { data: employees } = useEmployees();
 
@@ -56,10 +59,10 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
       value: Number(installmentValue.toFixed(2)),
       due_date: format(addMonths(startDate, index), "yyyy-MM-dd"),
       status: "pending" as const,
-      transaction_fee: fee, // Aplica a taxa padrão
+      transaction_fee: fee, // Aplica a taxa padrão em cada parcela
     }));
 
-    // Ajuste de centavos
+    // Ajuste de centavos na última parcela
     const currentSum = newInstallments.reduce((acc, curr) => acc + curr.value, 0);
     const diff = value - currentSum;
     if (diff !== 0) {
@@ -69,7 +72,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
     setInstallments(newInstallments);
   };
 
-  // Função genérica para atualizar qualquer campo da parcela (Valor, Data ou Taxa)
+  // Função genérica para atualizar parcelas (Valor, Data ou Taxa)
   const updateInstallment = (index: number, field: keyof InstallmentWithFee, value: any) => {
     const newInstallments = [...installments];
     newInstallments[index] = { ...newInstallments[index], [field]: value };

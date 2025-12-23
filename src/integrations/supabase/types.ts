@@ -111,36 +111,29 @@ export type Database = {
           transaction_fee_percentage?: number | null;
         };
       };
-      installments: {
+      employees: {
         Row: {
-          contract_id: string;
           created_at: string;
-          due_date: string;
+          email: string | null;
           id: string;
-          status: Database["public"]["Enums"]["transaction_status"];
-          value: number;
-          transaction_fee: number;
+          name: string;
+          role: string | null;
         };
         Insert: {
-          contract_id: string;
           created_at?: string;
-          due_date: string;
+          email?: string | null;
           id?: string;
-          status?: Database["public"]["Enums"]["transaction_status"];
-          value: number;
-          transaction_fee?: number;
+          name: string;
+          role?: string | null;
         };
         Update: {
-          contract_id?: string;
           created_at?: string;
-          due_date?: string;
+          email?: string | null;
           id?: string;
-          status?: Database["public"]["Enums"]["transaction_status"];
-          value?: number;
-          transaction_fee?: number;
+          name?: string;
+          role?: string | null;
         };
       };
-      // ... (Outras tabelas mantidas simplificadas para brevidade se não usadas)
       expenses: {
         Row: {
           amount: number;
@@ -182,17 +175,119 @@ export type Database = {
           updated_at?: string | null;
         };
       };
+      installments: {
+        Row: {
+          contract_id: string;
+          created_at: string;
+          due_date: string;
+          id: string;
+          status: Database["public"]["Enums"]["transaction_status"];
+          value: number;
+          transaction_fee: number;
+        };
+        Insert: {
+          contract_id: string;
+          created_at?: string;
+          due_date: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          value: number;
+          transaction_fee?: number;
+        };
+        Update: {
+          contract_id?: string;
+          created_at?: string;
+          due_date?: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          value?: number;
+          transaction_fee?: number;
+        };
+      };
+      transactions: {
+        Row: {
+          contract_id: string | null;
+          created_at: string;
+          description: string;
+          due_date: string;
+          id: string;
+          status: Database["public"]["Enums"]["transaction_status"];
+          type: Database["public"]["Enums"]["transaction_type"];
+          updated_at: string;
+          value: number;
+        };
+        Insert: {
+          contract_id?: string | null;
+          created_at?: string;
+          description: string;
+          due_date: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          type: Database["public"]["Enums"]["transaction_type"];
+          updated_at?: string;
+          value: number;
+        };
+        Update: {
+          contract_id?: string | null;
+          created_at?: string;
+          description?: string;
+          due_date?: string;
+          id?: string;
+          status?: Database["public"]["Enums"]["transaction_status"];
+          type?: Database["public"]["Enums"]["transaction_type"];
+          updated_at?: string;
+          value?: number;
+        };
+      };
       financial_overview: {
         Row: {
-          amount: number | null;
-          contract_id: string | null;
-          created_at: string | null;
-          date: string | null;
-          direction: string | null;
           id: string | null;
-          status: string | null;
+          contract_id: string | null;
           title: string | null;
           type: string | null;
+          direction: string | null;
+          amount: number | null;
+          date: string | null;
+          status: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          // Views generally don't support insert, but defining it avoids 'never' in some client inferences
+          id?: string | null;
+          contract_id?: string | null;
+          title?: string | null;
+          type?: string | null;
+          direction?: string | null;
+          amount?: number | null;
+          date?: string | null;
+          status?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string | null;
+          contract_id?: string | null;
+          title?: string | null;
+          type?: string | null;
+          direction?: string | null;
+          amount?: number | null;
+          date?: string | null;
+          status?: string | null;
+          created_at?: string | null;
+        };
+      };
+    };
+    Views: {
+      financial_overview: {
+        Row: {
+          id: string | null;
+          contract_id: string | null;
+          title: string | null;
+          type: string | null;
+          direction: string | null;
+          amount: number | null;
+          date: string | null;
+          status: string | null;
+          created_at: string | null;
         };
       };
     };
@@ -205,3 +300,9 @@ export type Database = {
     };
   };
 };
+
+// Helpers para extrair tipos das tabelas
+export type Tables<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"];
+export type TablesInsert<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Insert"];
+export type TablesUpdate<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Update"];
+export type Enums<T extends keyof Database["public"]["Enums"]> = Database["public"]["Enums"][T];

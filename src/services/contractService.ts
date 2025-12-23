@@ -1,13 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { Installment, Commission } from "@/types";
 
-// Atualizamos a interface para aceitar a taxa na parcela
 interface CreateContractInput {
   clientId: string;
   totalValue: number;
-  // Agora installment tem transaction_fee opcional no input
+  // Permite transaction_fee opcional na entrada
   installments: (Omit<Installment, "id" | "contract_id"> & { transaction_fee?: number })[];
-  commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[];
+  commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[];
 }
 
 export async function createContract({ clientId, totalValue, installments, commissions }: CreateContractInput) {
@@ -22,28 +21,30 @@ export async function createContract({ clientId, totalValue, installments, commi
     .select()
     .single();
 
-  if (contractError) throw contractError;
+  if (contractError || !contract) throw contractError || new Error("Erro ao criar contrato");
 
   try {
-    // 2. Inserir Parcelas (Com a taxa individual)
+    // 2. Inserir Parcelas
     if (installments.length > 0) {
       const installmentsData = installments.map((inst) => ({
         contract_id: contract.id,
         value: inst.value,
         due_date: inst.due_date,
-        status: inst.status || "pending",
-        transaction_fee: inst.transaction_fee || 0, // Salva o valor da taxa
+        status: (inst.status || "pending") as "pending" | "paid" | "overdue" | "cancelled",
+        transaction_fee: inst.transaction_fee || 0,
       }));
 
       const { error: installmentsError } = await supabase.from("installments").insert(installmentsData);
+
       if (installmentsError) throw installmentsError;
     }
 
-    // 3. Buscar IDs das parcelas criadas (para as comissões)
+    // 3. Buscar IDs das parcelas
     const { data: createdInstallments, error: fetchInstError } = await supabase
       .from("installments")
       .select("id, value")
       .eq("contract_id", contract.id);
+
     if (fetchInstError) throw fetchInstError;
 
     // 4. Inserir Comissões
@@ -55,9 +56,12 @@ export async function createContract({ clientId, totalValue, installments, commi
           employee_name: comm.employee_name,
           percentage: comm.percentage,
           value: (Number(inst.value) * comm.percentage) / 100,
+          status: "pending" as const,
         })),
       );
+
       const { error: commissionsError } = await supabase.from("commissions").insert(commissionsData);
+
       if (commissionsError) throw commissionsError;
     }
 
@@ -66,13 +70,14 @@ export async function createContract({ clientId, totalValue, installments, commi
 
     return contract;
   } catch (error) {
-    console.error("Erro, revertendo...", error);
-    await supabase.from("contracts").delete().eq("id", contract.id);
+    console.error("Erro no processo, revertendo...", error);
+    if (contract) {
+      await supabase.from("contracts").delete().eq("id", contract.id);
+    }
     throw error;
   }
 }
 
-// ... (Mantenha as outras funções iguais)
 export async function deleteContract(contractId: string) {
   await supabase.from("commissions").delete().eq("contract_id", contractId);
   await supabase.from("installments").delete().eq("contract_id", contractId);
@@ -88,13 +93,25 @@ export async function updateInstallmentStatus(
   if (error) throw error;
 }
 
-// Atualizar valor e taxa se necessário (Opcional, mas útil)
 export async function updateInstallmentValue(installmentId: string, newValue: number, newFee?: number) {
   const updateData: any = { value: newValue };
   if (newFee !== undefined) updateData.transaction_fee = newFee;
 
   const { error: instError } = await supabase.from("installments").update(updateData).eq("id", installmentId);
   if (instError) throw instError;
+
+  // Atualizar comissões vinculadas se o valor da parcela mudar
+  const { data: commissions } = await supabase
+    .from("commissions")
+    .select("id, percentage")
+    .eq("installment_id", installmentId);
+
+  if (commissions && commissions.length > 0) {
+    for (const comm of commissions) {
+      const newCommValue = (newValue * comm.percentage) / 100;
+      await supabase.from("commissions").update({ value: newCommValue }).eq("id", comm.id);
+    }
+  }
 }
 
 export async function checkAndCompleteContract(contractId: string) {
@@ -116,8 +133,10 @@ export async function getContractDetails(contractId: string) {
     .from("contracts")
     .select(`*, clients (id, name, school, avatar_url)`)
     .eq("id", contractId)
-    .maybeSingle();
+    .single();
+
   if (contractError) throw contractError;
+  if (!contract) throw new Error("Contrato não encontrado");
 
   const { data: installments, error: instError } = await supabase
     .from("installments")
