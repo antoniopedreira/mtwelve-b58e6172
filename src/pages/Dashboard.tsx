@@ -59,12 +59,14 @@ export default function Dashboard() {
         setIsLoading(true);
 
         // A. Totais Financeiros
-        const { data: financialRecords } = await supabase.from("financial_overview").select("amount, direction");
+        const { data: financialData } = await supabase.from("financial_overview").select("amount, direction");
+        // Casting para evitar erro 'never' caso a View não esteja perfeitamente tipada no gerador
+        const financialRecords = (financialData || []) as any[];
 
         let receita = 0;
         let despesa = 0;
 
-        financialRecords?.forEach((rec) => {
+        financialRecords.forEach((rec) => {
           if (rec.direction === "entrada") receita += Number(rec.amount);
           else despesa += Number(rec.amount);
         });
@@ -76,21 +78,23 @@ export default function Dashboard() {
         });
 
         // B. Atividades Recentes
-        const { data: contracts } = await supabase
+        const { data: contractsData } = await supabase
           .from("contracts")
           .select("created_at, total_value, clients(name)")
           .order("created_at", { ascending: false })
           .limit(5);
+        const contracts = (contractsData || []) as any[];
 
-        const { data: finances } = await supabase
+        const { data: financesData } = await supabase
           .from("financial_overview")
           .select("*")
           .order("created_at", { ascending: false })
           .limit(10);
+        const finances = (financesData || []) as any[];
 
         const activities: RecentActivity[] = [];
 
-        contracts?.forEach((c) => {
+        contracts.forEach((c) => {
           activities.push({
             id: `new-contract-${c.created_at}`,
             type: "contrato",
@@ -101,7 +105,8 @@ export default function Dashboard() {
           });
         });
 
-        finances?.forEach((f) => {
+        finances.forEach((f) => {
+          // Evitar duplicar se o contrato aparecer no financeiro também
           if (f.type === "installment") {
             activities.push({
               id: f.id || `inst-${f.date}`,
@@ -138,7 +143,7 @@ export default function Dashboard() {
         // C. Próximos Vencimentos
         const today = new Date().toISOString().split("T")[0];
 
-        const { data: installments } = await supabase
+        const { data: installmentsData } = await supabase
           .from("installments")
           .select(
             `
@@ -156,8 +161,10 @@ export default function Dashboard() {
           .order("due_date", { ascending: true })
           .limit(5);
 
+        const installments = (installmentsData || []) as any[];
+
         const mappedUpcoming =
-          installments?.map((inst: any) => ({
+          installments.map((inst: any) => ({
             id: inst.id,
             clientName: inst.contracts?.clients?.name || "Cliente",
             clientAvatar: inst.contracts?.clients?.avatar_url,
@@ -186,7 +193,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* 1. KPIs FINANCEIROS (Sem Trend) */}
+      {/* 1. KPIs FINANCEIROS */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <KPICard
           title="Receita Total"
@@ -207,7 +214,7 @@ export default function Dashboard() {
           className="border-[#E8BD27]/20"
         />
 
-        {/* 2. KPIs OPERACIONAIS (Sem Trend) */}
+        {/* 2. KPIs OPERACIONAIS */}
         <KPICard
           title="Clientes Ativos"
           value={kpiLoading ? "..." : String(kpiData?.activeClients || 0)}

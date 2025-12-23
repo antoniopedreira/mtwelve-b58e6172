@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { createContract } from "@/services/contractService";
 
+// Tipo auxiliar para alinhar com o ContractBuilder
+type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee?: number };
+
 export default function CRM() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | undefined>();
@@ -30,8 +33,9 @@ export default function CRM() {
 
   const handleSaveContract = async (data: {
     totalValue: number;
-    installments: Omit<Installment, "id" | "contract_id">[];
-    commissions: Omit<Commission, "id" | "contract_id" | "value">[];
+    installments: InstallmentWithFee[];
+    // Correção: Omitimos 'status' e 'installment_id' pois ainda não existem nesta etapa
+    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[];
   }) => {
     if (!selectedClient) {
       toast({
@@ -128,14 +132,16 @@ export default function CRM() {
               <span className="gold-text">Novo Contrato</span>
             </DialogTitle>
           </DialogHeader>
-          <ContractBuilder
-            client={selectedClient}
-            onSave={handleSaveContract}
-            onCancel={() => {
-              setIsContractModalOpen(false);
-              setSelectedClient(undefined);
-            }}
-          />
+          <div className="p-4">
+            <ContractBuilder
+              client={selectedClient}
+              onSave={handleSaveContract}
+              onCancel={() => {
+                setIsContractModalOpen(false);
+                setSelectedClient(undefined);
+              }}
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </div>
