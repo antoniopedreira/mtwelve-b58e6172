@@ -13,7 +13,6 @@ import {
   AlertCircle,
   Minus,
   Filter,
-  Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -443,16 +442,18 @@ export function FinancialSummary() {
                       </TableCell>
                       {displayMonths.map((m) => {
                         const cellData = matrix.comissoes.items[title][m];
+                        // REMOVIDO: underline decoration-dashed underline-offset-2
+                        // MANTIDO: hover:bg-muted/20 hover:text-primary e cursor-pointer para indicar interatividade
+                        const clickableClass =
+                          cellData && cellData.amount > 0
+                            ? "cursor-pointer hover:bg-muted/20 hover:text-primary transition-colors"
+                            : "";
+
                         return (
                           <>
                             <TableCell
                               key={m}
-                              className={cn(
-                                "text-right",
-                                cellData && cellData.amount > 0
-                                  ? "cursor-pointer hover:bg-muted/20 hover:text-primary underline decoration-dashed underline-offset-2"
-                                  : "",
-                              )}
+                              className={cn("text-right", clickableClass)}
                               onClick={() => handleCellClick("comissoes", title, m, cellData)}
                             >
                               {cellData ? (
@@ -579,17 +580,22 @@ function CommissionDetailDialog({
     async function fetchDetails() {
       if (!data || data.length === 0) return;
 
-      const ids = data.map((r) => r.id.split("_")[0]); // Limpa IDs compostos se houver
+      // Extrai os IDs reais das comissões (remove prefixos se houver)
+      const ids = data.map((r) => (r.id.includes("_") ? r.id.split("_")[0] : r.id));
 
       try {
+        // Busca os dados completos na tabela de comissões, fazendo join com parcelas e clientes
         const { data: commissions, error } = await supabase
           .from("commissions")
           .select(
             `
+            id,
             value,
             percentage,
+            status,
             installments (
-              value
+              value,
+              due_date
             ),
             contracts (
               clients (name)
@@ -612,50 +618,92 @@ function CommissionDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-card border-border">
+      <DialogContent className="max-w-[600px] bg-card border-border">
         <DialogHeader>
-          <DialogTitle>Detalhamento de Comissões</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Search className="h-5 w-5 text-primary" />
+            Detalhamento de Comissões
+          </DialogTitle>
           <p className="text-sm text-muted-foreground">
-            {employeeName} - {monthLabel}
+            Beneficiário: <span className="font-medium text-foreground">{employeeName}</span> | Mês:{" "}
+            <span className="font-medium text-foreground">{monthLabel}</span>
           </p>
         </DialogHeader>
 
         {loading ? (
           <div className="flex justify-center py-8">
-            <Loader2 className="animate-spin" />
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fonte (Cliente)</TableHead>
-                <TableHead className="text-right">Parcela</TableHead>
-                <TableHead className="text-right">Comissão</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {details.map((item, i) => (
-                <TableRow key={i}>
-                  <TableCell className="font-medium">{item.contracts?.clients?.name || "N/A"}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-                      item.installments?.value || 0,
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-emerald-500">
-                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.value || 0)}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {details.length === 0 && (
+          <div className="rounded-md border border-border/50 overflow-hidden">
+            <Table>
+              <TableHeader className="bg-muted/30">
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-4">
-                    Nenhum detalhe encontrado.
-                  </TableCell>
+                  <TableHead>Fonte (Cliente)</TableHead>
+                  <TableHead className="text-right">Valor da Parcela</TableHead>
+                  <TableHead className="text-right">Comissão</TableHead>
+                  <TableHead className="text-center w-[100px]">Status</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {details.map((item, i) => (
+                  <TableRow key={item.id || i} className="hover:bg-muted/5">
+                    <TableCell className="font-medium">
+                      {item.contracts?.clients?.name || "Cliente N/A"}
+                      {item.installments?.due_date && (
+                        <span className="block text-xs text-muted-foreground">
+                          Venc: {format(new Date(item.installments.due_date), "dd/MM")}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                        item.installments?.value || 0,
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-bold text-emerald-500">
+                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.value || 0)}
+                      <span className="block text-xs text-muted-foreground font-normal">({item.percentage}%)</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {item.status === "paid" ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-500 ring-1 ring-inset ring-emerald-500/20">
+                          Pago
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-yellow-500/10 px-2 py-1 text-xs font-medium text-yellow-600 ring-1 ring-inset ring-yellow-500/20">
+                          Pendente
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {details.length > 0 && (
+                  <TableRow className="bg-muted/10 font-bold">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right">
+                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                        details.reduce((acc, curr) => acc + (curr.installments?.value || 0), 0),
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-emerald-500">
+                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                        details.reduce((acc, curr) => acc + (curr.value || 0), 0),
+                      )}
+                    </TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                )}
+                {details.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                      Nenhum detalhe encontrado.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </DialogContent>
     </Dialog>
