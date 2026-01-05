@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Minus,
   Filter,
+  Search, // <--- ADICIONADO AQUI
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -442,8 +443,7 @@ export function FinancialSummary() {
                       </TableCell>
                       {displayMonths.map((m) => {
                         const cellData = matrix.comissoes.items[title][m];
-                        // REMOVIDO: underline decoration-dashed underline-offset-2
-                        // MANTIDO: hover:bg-muted/20 hover:text-primary e cursor-pointer para indicar interatividade
+                        // Sem traços, apenas cursor pointer e hover suave
                         const clickableClass =
                           cellData && cellData.amount > 0
                             ? "cursor-pointer hover:bg-muted/20 hover:text-primary transition-colors"
