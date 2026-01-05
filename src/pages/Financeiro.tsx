@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, FileText, Loader2, Users, CheckCircle2, History } from "lucide-react";
+import { Plus, Loader2, Users, CheckCircle2, History } from "lucide-react";
 import { FinancialSummary } from "@/components/modules/financial/FinancialSummary";
 import { ContractBuilder } from "@/components/modules/financial/ContractBuilder";
 import { ClientSelectorDialog } from "@/components/modules/financial/ClientSelectorDialog";
@@ -16,6 +16,7 @@ import { Client, Installment, Commission } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NewClientForm } from "@/components/modules/crm/NewClientDialog";
+// Importação do Hook de Realtime
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee?: number };
@@ -35,7 +36,7 @@ export default function Financeiro() {
 
   const [contractProgress, setContractProgress] = useState<Record<string, { paid: number; total: number }>>({});
 
-  // Realtime update
+  // Realtime update: Recarrega as listas quando houver mudanças no banco
   const refreshAll = () => {
     refetchContracts();
     refetchCompleted();
@@ -249,7 +250,6 @@ export default function Financeiro() {
         </TabsList>
 
         <TabsContent value="dre" className="w-full mt-0 focus-visible:outline-none">
-          {/* Container full-width para o DRE */}
           <div className="w-full">
             <FinancialSummary />
           </div>
