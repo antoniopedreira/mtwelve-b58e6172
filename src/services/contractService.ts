@@ -4,7 +4,6 @@ import { Installment, Commission } from "@/types";
 interface CreateContractInput {
   clientId: string;
   totalValue: number;
-  // Permite transaction_fee opcional na entrada
   installments: (Omit<Installment, "id" | "contract_id"> & { transaction_fee?: number })[];
   commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[];
 }
@@ -39,25 +38,32 @@ export async function createContract({ clientId, totalValue, installments, commi
       if (installmentsError) throw installmentsError;
     }
 
-    // 3. Buscar IDs das parcelas
+    // 3. Buscar IDs das parcelas criadas (IMPORTANTE: trazer transaction_fee)
     const { data: createdInstallments, error: fetchInstError } = await supabase
       .from("installments")
-      .select("id, value")
+      .select("id, value, transaction_fee")
       .eq("contract_id", contract.id);
 
     if (fetchInstError) throw fetchInstError;
 
-    // 4. Inserir Comissões
+    // 4. Inserir Comissões (CÁLCULO: Valor - Taxa)
     if (commissions.length > 0 && createdInstallments) {
       const commissionsData = commissions.flatMap((comm) =>
-        createdInstallments.map((inst) => ({
-          contract_id: contract.id,
-          installment_id: inst.id,
-          employee_name: comm.employee_name,
-          percentage: comm.percentage,
-          value: (Number(inst.value) * comm.percentage) / 100,
-          status: "pending" as const,
-        })),
+        createdInstallments.map((inst) => {
+          // Lógica de Cálculo Líquido
+          const grossValue = Number(inst.value);
+          const fee = Number(inst.transaction_fee || 0);
+          const netValue = Math.max(0, grossValue - fee); // Evita valor negativo
+
+          return {
+            contract_id: contract.id,
+            installment_id: inst.id,
+            employee_name: comm.employee_name,
+            percentage: comm.percentage,
+            value: (netValue * comm.percentage) / 100, // Aplica % sobre o Líquido
+            status: "pending" as const,
+          };
+        }),
       );
 
       const { error: commissionsError } = await supabase.from("commissions").insert(commissionsData);
@@ -93,22 +99,37 @@ export async function updateInstallmentStatus(
   if (error) throw error;
 }
 
+// Atualiza valor/taxa da parcela e recalcula comissões vinculadas
 export async function updateInstallmentValue(installmentId: string, newValue: number, newFee?: number) {
   const updateData: any = { value: newValue };
   if (newFee !== undefined) updateData.transaction_fee = newFee;
 
+  // 1. Atualiza a parcela
   const { error: instError } = await supabase.from("installments").update(updateData).eq("id", installmentId);
   if (instError) throw instError;
 
-  // Atualizar comissões vinculadas se o valor da parcela mudar
-  const { data: commissions } = await supabase
+  // 2. Busca dados atualizados da parcela (para garantir que temos taxa e valor certos)
+  const { data: installment } = await supabase
+    .from("installments")
+    .select("value, transaction_fee")
+    .eq("id", installmentId)
+    .single();
+  if (!installment) return;
+
+  const currentVal = Number(installment.value);
+  const currentFee = Number(installment.transaction_fee || 0);
+  const netValue = Math.max(0, currentVal - currentFee);
+
+  // 3. Recalcula comissões vinculadas
+  const { data: commissions, error: commError } = await supabase
     .from("commissions")
     .select("id, percentage")
     .eq("installment_id", installmentId);
+  if (commError) throw commError;
 
   if (commissions && commissions.length > 0) {
     for (const comm of commissions) {
-      const newCommValue = (newValue * comm.percentage) / 100;
+      const newCommValue = (netValue * comm.percentage) / 100;
       await supabase.from("commissions").update({ value: newCommValue }).eq("id", comm.id);
     }
   }

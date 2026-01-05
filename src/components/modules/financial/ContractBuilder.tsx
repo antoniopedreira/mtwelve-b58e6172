@@ -13,7 +13,6 @@ import { Installment, Commission } from "@/types";
 import { Separator } from "@/components/ui/separator";
 import { useEmployees } from "@/hooks/useEmployees";
 
-// Estendemos o tipo Installment localmente para garantir transaction_fee
 type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee: number };
 
 interface ContractBuilderProps {
@@ -21,7 +20,6 @@ interface ContractBuilderProps {
   onSave: (data: {
     totalValue: number;
     installments: InstallmentWithFee[];
-    // CORREÇÃO: Omitimos 'status' aqui também para evitar erro de tipo
     commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[];
   }) => void;
   onCancel: () => void;
@@ -31,13 +29,9 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
   const [totalValue, setTotalValue] = useState<string>("");
   const [installmentsCount, setInstallmentsCount] = useState<string>("1");
   const [startDate, setStartDate] = useState<Date>(new Date());
-
-  // Taxa Padrão (apenas para preenchimento inicial)
   const [defaultFee, setDefaultFee] = useState<string>("0");
 
   const [installments, setInstallments] = useState<InstallmentWithFee[]>([]);
-
-  // CORREÇÃO: Omitimos 'status' do estado para bater com a inicialização
   const [commissions, setCommissions] = useState<
     Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[]
   >([]);
@@ -46,6 +40,22 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
 
   const noSpinnerClass =
     "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
+  // CÁLCULO DO LÍQUIDO PARA EXIBIÇÃO
+  const calculateNetTotal = () => {
+    // Se houver parcelas geradas, soma suas taxas reais. Se não, estima pela taxa padrão * count
+    let totalTax = 0;
+    if (installments.length > 0) {
+      totalTax = installments.reduce((acc, curr) => acc + (curr.transaction_fee || 0), 0);
+    } else {
+      totalTax = Number(defaultFee) * Number(installmentsCount);
+    }
+
+    const gross = Number(totalValue) || 0;
+    return Math.max(0, gross - totalTax);
+  };
+
+  const netTotal = calculateNetTotal();
 
   const generateInstallments = () => {
     const value = Number(totalValue);
@@ -59,10 +69,9 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
       value: Number(installmentValue.toFixed(2)),
       due_date: format(addMonths(startDate, index), "yyyy-MM-dd"),
       status: "pending" as const,
-      transaction_fee: fee, // Aplica a taxa padrão em cada parcela
+      transaction_fee: fee,
     }));
 
-    // Ajuste de centavos na última parcela
     const currentSum = newInstallments.reduce((acc, curr) => acc + curr.value, 0);
     const diff = value - currentSum;
     if (diff !== 0) {
@@ -72,7 +81,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
     setInstallments(newInstallments);
   };
 
-  // Função genérica para atualizar parcelas (Valor, Data ou Taxa)
   const updateInstallment = (index: number, field: keyof InstallmentWithFee, value: any) => {
     const newInstallments = [...installments];
     newInstallments[index] = { ...newInstallments[index], [field]: value };
@@ -143,8 +151,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
             className={noSpinnerClass}
           />
         </div>
-
-        {/* TAXA PADRÃO (VALOR) */}
         <div className="space-y-2">
           <Label>Taxa Padrão (R$)</Label>
           <div className="relative">
@@ -158,7 +164,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
             <span className="absolute right-3 top-2.5 text-xs text-muted-foreground">R$</span>
           </div>
         </div>
-
         <div className="space-y-2">
           <Label>Data 1ª Parcela</Label>
           <Popover>
@@ -207,7 +212,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
           </div>
         ) : (
           <div className="grid gap-3">
-            {/* CABEÇALHO DA LISTA */}
             <div className="grid grid-cols-12 gap-4 px-3 text-xs font-medium text-muted-foreground uppercase">
               <div className="col-span-1">#</div>
               <div className="col-span-4">Vencimento</div>
@@ -220,10 +224,7 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                 key={index}
                 className="grid grid-cols-12 gap-4 items-center p-3 bg-card border rounded-lg hover:border-primary/30 transition-colors"
               >
-                {/* ÍNDICE */}
                 <div className="col-span-1 text-sm font-medium text-muted-foreground">{index + 1}</div>
-
-                {/* DATA */}
                 <div className="col-span-4">
                   <Popover>
                     <PopoverTrigger asChild>
@@ -242,8 +243,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                     </PopoverContent>
                   </Popover>
                 </div>
-
-                {/* VALOR DA PARCELA */}
                 <div className="col-span-4">
                   <Input
                     type="number"
@@ -252,8 +251,6 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                     className={`font-medium h-9 ${noSpinnerClass}`}
                   />
                 </div>
-
-                {/* TAXA DA PARCELA (EDITÁVEL) */}
                 <div className="col-span-3">
                   <div className="relative">
                     <Input
@@ -343,7 +340,8 @@ export function ContractBuilder({ client, onSave, onCancel }: ContractBuilderPro
                 <div className="w-40 space-y-2">
                   <Label>Valor Estimado</Label>
                   <div className="h-10 px-3 py-2 bg-muted rounded-md text-sm font-medium flex items-center text-muted-foreground border">
-                    R$ {((Number(totalValue) * comm.percentage) / 100).toFixed(2)}
+                    {/* CÁLCULO DO LÍQUIDO APLICADO VISUALMENTE */}
+                    R$ {((netTotal * comm.percentage) / 100).toFixed(2)}
                   </div>
                 </div>
                 <Button

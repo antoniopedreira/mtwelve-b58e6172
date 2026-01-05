@@ -81,7 +81,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
 
       if (commError) throw commError;
 
-      // Ordenação básica
       const sortedCommissions = (commData || []).sort((a: any, b: any) => {
         const dateA = a.installments?.due_date || a.created_at;
         const dateB = b.installments?.due_date || b.created_at;
@@ -97,18 +96,16 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     }
   }
 
-  // --- AGRUPAMENTO DE COMISSÕES POR MÊS ---
+  // Agrupamento de Comissões por Mês
   const commissionsGroups = useMemo(() => {
     const groupsMap = new Map<string, { label: string; dateVal: number; items: any[] }>();
 
     commissions.forEach((comm) => {
-      // Define a data de referência (da parcela ou criação)
       const dateStr = comm.installments?.due_date || comm.created_at || new Date().toISOString();
-      // Ajuste de fuso horário
       const dateObj = new Date(dateStr.includes("T") ? dateStr : dateStr + "T12:00:00");
 
-      const key = format(dateObj, "yyyy-MM"); // Chave para ordenação
-      const label = format(dateObj, "MMMM yyyy", { locale: ptBR }); // Label visual
+      const key = format(dateObj, "yyyy-MM");
+      const label = format(dateObj, "MMMM yyyy", { locale: ptBR });
       const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
 
       if (!groupsMap.has(key)) {
@@ -121,11 +118,8 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
       groupsMap.get(key)!.items.push(comm);
     });
 
-    // Retorna array ordenado por data
     return Array.from(groupsMap.values()).sort((a, b) => a.dateVal - b.dateVal);
   }, [commissions]);
-
-  // --- AÇÕES RÁPIDAS ---
 
   const quickPayInstallment = async (id: string) => {
     try {
@@ -149,8 +143,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     }
   };
 
-  // --- EDIÇÃO DE PARCELA ---
-
   const startEditingInstallment = (inst: any) => {
     setEditingInstallmentId(inst.id);
     const dateObj = new Date(inst.due_date.includes("T") ? inst.due_date : inst.due_date + "T12:00:00");
@@ -164,6 +156,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
 
   const saveInstallment = async (id: string) => {
     try {
+      // 1. Salva Parcela (Valor e Taxa)
       await supabase
         .from("installments")
         .update({
@@ -174,14 +167,31 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
         })
         .eq("id", id);
 
-      // Recalcula total do contrato
+      // 2. Recalcula Comissões Vinculadas (Líquido = Valor - Taxa)
+      const newVal = Number(editInstallmentForm.value);
+      const newFee = Number(editInstallmentForm.transaction_fee);
+      const netVal = Math.max(0, newVal - newFee);
+
+      const { data: linkedCommissions } = await supabase
+        .from("commissions")
+        .select("id, percentage")
+        .eq("installment_id", id);
+
+      if (linkedCommissions) {
+        for (const comm of linkedCommissions) {
+          const newCommValue = (netVal * comm.percentage) / 100;
+          await supabase.from("commissions").update({ value: newCommValue }).eq("id", comm.id);
+        }
+      }
+
+      // 3. Atualiza Total do Contrato
       const { data: all } = await supabase.from("installments").select("value").eq("contract_id", contractId);
       if (all) {
         const newTotal = all.reduce((acc, curr) => acc + Number(curr.value), 0);
         await supabase.from("contracts").update({ total_value: newTotal }).eq("id", contractId);
       }
 
-      toast.success("Parcela atualizada!");
+      toast.success("Parcela e comissões atualizadas!");
       setEditingInstallmentId(null);
       fetchContractDetails();
       if (onContractUpdated) onContractUpdated();
@@ -189,8 +199,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
       toast.error("Erro ao salvar parcela.");
     }
   };
-
-  // --- EDIÇÃO DE COMISSÃO ---
 
   const startEditingCommission = (comm: any) => {
     setEditingCommissionId(comm.id);
@@ -258,7 +266,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
             <TabsTrigger value="commissions">Comissões & Repasses</TabsTrigger>
           </TabsList>
 
-          {/* === ABA 1: PARCELAS === */}
           <TabsContent value="installments" className="flex-1 flex flex-col mt-4 gap-4 overflow-hidden">
             <div className="flex items-center justify-between p-4 bg-muted/20 rounded-lg border border-border/50 shrink-0">
               <div className="space-y-1">
@@ -290,7 +297,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                     const isEditing = editingInstallmentId === inst.id;
                     return (
                       <TableRow key={inst.id}>
-                        {/* DATA */}
                         <TableCell>
                           {isEditing ? (
                             <Popover>
@@ -326,7 +332,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                           )}
                         </TableCell>
 
-                        {/* VALOR */}
                         <TableCell>
                           {isEditing ? (
                             <Input
@@ -342,7 +347,7 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                           )}
                         </TableCell>
 
-                        {/* TAXA (EDITÁVEL) */}
+                        {/* Coluna da Taxa - Editável */}
                         <TableCell>
                           {isEditing ? (
                             <div className="relative">
@@ -360,7 +365,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                           )}
                         </TableCell>
 
-                        {/* STATUS */}
                         <TableCell>
                           {isEditing ? (
                             <Select
@@ -390,8 +394,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                             </Badge>
                           )}
                         </TableCell>
-
-                        {/* AÇÕES */}
                         <TableCell className="text-right">
                           {isEditing ? (
                             <div className="flex justify-end gap-1">
@@ -452,7 +454,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
             </div>
           </TabsContent>
 
-          {/* === ABA 2: COMISSÕES (AGRUPADAS POR MÊS) === */}
           <TabsContent value="commissions" className="flex-1 flex flex-col mt-4 gap-4 overflow-hidden">
             <div className="p-4 bg-muted/20 rounded-lg border border-border/50 shrink-0">
               <div className="flex items-center gap-3 mb-2">
@@ -490,7 +491,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                   <TableBody>
                     {commissionsGroups.map((group) => (
                       <>
-                        {/* CABEÇALHO DO MÊS */}
                         <TableRow key={group.label} className="bg-muted/50 hover:bg-muted/50">
                           <TableCell colSpan={5} className="py-2 font-semibold text-primary flex items-center gap-2">
                             <CalendarDays className="h-4 w-4" />
@@ -498,7 +498,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                           </TableCell>
                         </TableRow>
 
-                        {/* ITENS DO MÊS */}
                         {group.items.map((comm) => {
                           const isEditing = editingCommissionId === comm.id;
                           return (
