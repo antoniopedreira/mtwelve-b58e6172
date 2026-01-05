@@ -16,8 +16,8 @@ import { Client, Installment, Commission } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NewClientForm } from "@/components/modules/crm/NewClientDialog";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
-// Definição local para o tipo de parcela com taxa (usado no builder)
 type InstallmentWithFee = Omit<Installment, "id" | "contract_id"> & { transaction_fee?: number };
 
 export default function Financeiro() {
@@ -34,6 +34,13 @@ export default function Financeiro() {
   const { data: completedContracts, isLoading: completedLoading, refetch: refetchCompleted } = useCompletedContracts();
 
   const [contractProgress, setContractProgress] = useState<Record<string, { paid: number; total: number }>>({});
+
+  // Realtime update
+  const refreshAll = () => {
+    refetchContracts();
+    refetchCompleted();
+  };
+  useRealtimeRefresh(refreshAll);
 
   useEffect(() => {
     const fetchProgress = async () => {
@@ -57,11 +64,6 @@ export default function Financeiro() {
 
     fetchProgress();
   }, [activeContracts, completedContracts]);
-
-  const handleDataRefresh = () => {
-    refetchContracts();
-    refetchCompleted();
-  };
 
   const handleOpenNewContract = () => {
     setIsClientSelectorOpen(true);
@@ -88,11 +90,10 @@ export default function Financeiro() {
     }
   };
 
-  // --- CORREÇÃO AQUI: Tipagem atualizada para bater com o ContractBuilder ---
   const handleSaveContract = async (data: {
     totalValue: number;
     installments: InstallmentWithFee[];
-    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id">[];
+    commissions: Omit<Commission, "id" | "contract_id" | "value" | "installment_id" | "status">[];
     transactionFee: number;
   }) => {
     if (!selectedClient) return;
@@ -114,7 +115,7 @@ export default function Financeiro() {
 
       setIsContractModalOpen(false);
       setSelectedClient(null);
-      handleDataRefresh();
+      refreshAll();
     } catch (error) {
       console.error("Erro ao salvar contrato:", error);
       toast({
@@ -206,17 +207,17 @@ export default function Financeiro() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="flex flex-col space-y-6 animate-fade-in w-full">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Financeiro</h1>
-          <p className="text-muted-foreground mt-1">DRE Gerencial, Fluxo de Caixa e Gestão de Contratos.</p>
+          <p className="text-muted-foreground mt-1">Gestão estratégica, fluxo de caixa e contratos.</p>
         </div>
 
         {/* Botões de Ação */}
         <div className="flex items-center gap-3">
-          <NewExpenseDialog onSuccess={handleDataRefresh} />
+          <NewExpenseDialog onSuccess={refreshAll} />
           <Button
             className="gold-gradient text-primary-foreground font-semibold shadow-lg hover:shadow-xl transition-all"
             onClick={handleOpenNewContract}
@@ -227,31 +228,34 @@ export default function Financeiro() {
         </div>
       </div>
 
-      {/* Abas Principais */}
-      <Tabs defaultValue="dre" className="space-y-6">
+      {/* Abas */}
+      <Tabs defaultValue="dre" className="w-full space-y-6">
         <TabsList className="bg-muted/50 p-1 rounded-xl w-full md:w-auto grid grid-cols-3 md:flex">
           <TabsTrigger value="dre" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm">
-            DRE
+            DRE Gerencial
           </TabsTrigger>
           <TabsTrigger
             value="contracts"
             className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
           >
-            Gestão de Contratos
+            Contratos
           </TabsTrigger>
           <TabsTrigger
             value="expenses"
             className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
           >
-            Gestão de Despesas
+            Despesas
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="dre" className="space-y-4 focus-visible:outline-none">
-          <FinancialSummary />
+        <TabsContent value="dre" className="w-full mt-0 focus-visible:outline-none">
+          {/* Container full-width para o DRE */}
+          <div className="w-full">
+            <FinancialSummary />
+          </div>
         </TabsContent>
 
-        <TabsContent value="contracts" className="space-y-4 focus-visible:outline-none">
+        <TabsContent value="contracts" className="mt-0 focus-visible:outline-none">
           <Tabs defaultValue="active" className="w-full">
             <div className="flex items-center justify-between mb-4">
               <TabsList className="bg-transparent border border-border/50 p-0 h-9 rounded-lg">
@@ -321,7 +325,7 @@ export default function Financeiro() {
           </Tabs>
         </TabsContent>
 
-        <TabsContent value="expenses" className="space-y-4 focus-visible:outline-none">
+        <TabsContent value="expenses" className="mt-0 focus-visible:outline-none">
           <ExpensesTable />
         </TabsContent>
       </Tabs>
@@ -367,7 +371,7 @@ export default function Financeiro() {
         contractId={selectedContractId}
         open={isDetailOpen}
         onOpenChange={setIsDetailOpen}
-        onContractUpdated={handleDataRefresh}
+        onContractUpdated={refreshAll}
       />
     </div>
   );

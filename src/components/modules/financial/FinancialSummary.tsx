@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { format, startOfMonth } from "date-fns";
+import { format, startOfMonth, subMonths, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Loader2,
@@ -12,10 +12,12 @@ import {
   Clock,
   AlertCircle,
   Minus,
+  Filter,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -48,7 +50,8 @@ export function FinancialSummary() {
   const [records, setRecords] = useState<FinancialRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ALTERAÇÃO AQUI: Agora 'receitas' começa como false (fechado)
+  // Controle de estado
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({
     receitas: false,
     despesas: false,
@@ -65,6 +68,16 @@ export function FinancialSummary() {
 
       if (error) throw error;
       setRecords(data as FinancialRecord[]);
+
+      // Se houver dados, tenta selecionar o ano mais recente automaticamente se o atual não tiver dados
+      if (data && data.length > 0) {
+        const years = Array.from(new Set(data.map((d: any) => d.date.substring(0, 4))))
+          .sort()
+          .reverse();
+        if (!years.includes(new Date().getFullYear().toString()) && years.length > 0) {
+          setSelectedYear(years[0]);
+        }
+      }
     } catch (error) {
       console.error("Erro ao buscar financeiro:", error);
     } finally {
@@ -73,7 +86,7 @@ export function FinancialSummary() {
   }
 
   // --- PROCESSAMENTO ---
-  const { matrix, months, totals } = useMemo(() => {
+  const { matrix, availableYears, displayMonths, totals } = useMemo(() => {
     const matrix: MatrixData = {
       receitas: { totalByMonth: {}, items: {} },
       despesas: { totalByMonth: {}, items: {} },
@@ -81,12 +94,17 @@ export function FinancialSummary() {
     };
 
     const uniqueMonths = new Set<string>();
+    const uniqueYears = new Set<string>();
     const grandTotals: Record<string, number> = {};
 
     records.forEach((record) => {
       // Ajuste de fuso: T12:00:00 para garantir dia correto
       const dateStr = record.date.includes("T") ? record.date : `${record.date}T12:00:00`;
       const dateObj = new Date(dateStr);
+
+      const year = format(dateObj, "yyyy");
+      uniqueYears.add(year);
+
       const monthKey = format(startOfMonth(dateObj), "yyyy-MM");
       uniqueMonths.add(monthKey);
 
@@ -115,8 +133,14 @@ export function FinancialSummary() {
       else grandTotals[monthKey] -= val;
     });
 
-    return { matrix, months: Array.from(uniqueMonths).sort(), totals: grandTotals };
-  }, [records]);
+    const allMonths = Array.from(uniqueMonths).sort();
+    const sortedYears = Array.from(uniqueYears).sort().reverse();
+
+    // Filtra os meses para mostrar apenas o ano selecionado
+    const displayMonths = allMonths.filter((m) => m.startsWith(selectedYear));
+
+    return { matrix, availableYears: sortedYears, displayMonths, totals: grandTotals };
+  }, [records, selectedYear]);
 
   const toggleRow = (key: string) => {
     setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -128,8 +152,16 @@ export function FinancialSummary() {
   const getMonthLabel = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
     const date = new Date(Number(year), Number(month) - 1, 1);
-    const label = format(date, "MMM yy", { locale: ptBR });
+    const label = format(date, "MMM", { locale: ptBR }); // Ex: Jan
     return label.charAt(0).toUpperCase() + label.slice(1);
+  };
+
+  // Helper para buscar o mês anterior matematicamente (permite calcular Jan comparado com Dez do ano anterior)
+  const getPrevMonthKey = (currentMonthKey: string) => {
+    const [year, month] = currentMonthKey.split("-");
+    const date = new Date(Number(year), Number(month) - 1, 1); // Dia 1 do mês atual
+    const prevDate = subMonths(date, 1);
+    return format(prevDate, "yyyy-MM");
   };
 
   const calculateVariation = (current: number, previous: number) => {
@@ -137,21 +169,28 @@ export function FinancialSummary() {
     return ((current - previous) / previous) * 100;
   };
 
+  // Componente de Variação (Célula AH) - Agora busca na Matrix Global
   const VariationCell = ({
     current,
-    previous,
+    monthKey,
+    dataSource,
     type,
   }: {
     current: number;
-    previous: number;
+    monthKey: string;
+    dataSource: Record<string, number> | undefined; // Passamos o objeto de totais completo
     type: "good_is_up" | "good_is_down";
   }) => {
-    if (!previous) return <TableCell className="w-[60px] p-1 text-center text-xs text-muted-foreground">-</TableCell>;
+    const prevMonthKey = getPrevMonthKey(monthKey);
+    const previous = dataSource ? dataSource[prevMonthKey] || 0 : 0;
+
+    if (!previous)
+      return <TableCell className="w-[50px] p-1 text-center text-[10px] text-muted-foreground">-</TableCell>;
 
     const variation = calculateVariation(current, previous);
     if (variation === 0)
       return (
-        <TableCell className="w-[60px] p-1 text-center text-xs text-muted-foreground">
+        <TableCell className="w-[50px] p-1 text-center text-[10px] text-muted-foreground">
           <Minus className="w-3 h-3 mx-auto" />
         </TableCell>
       );
@@ -164,7 +203,7 @@ export function FinancialSummary() {
     }
 
     return (
-      <TableCell className="w-[60px] p-1 text-center border-l border-dashed border-border/30 bg-muted/5">
+      <TableCell className="w-[50px] p-1 text-center border-l border-dashed border-border/30 bg-muted/5">
         <div className={cn("text-[10px] flex items-center justify-center gap-0.5", colorClass)}>
           {variation > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
           {Math.abs(variation).toFixed(0)}%
@@ -194,115 +233,142 @@ export function FinancialSummary() {
       <Card className="bg-muted/20 border-dashed">
         <CardContent className="flex flex-col items-center justify-center py-10 opacity-50">
           <DollarSign className="h-10 w-10 mb-2" />
-          <p>Sem dados.</p>
+          <p>Sem dados financeiros.</p>
         </CardContent>
       </Card>
     );
 
-  const totalReceitas = Object.values(matrix.receitas.totalByMonth).reduce((a, b) => a + b, 0);
-  const totalDespesas = Object.values(matrix.despesas.totalByMonth).reduce((a, b) => a + b, 0);
-  const totalComissoes = Object.values(matrix.comissoes.totalByMonth).reduce((a, b) => a + b, 0);
-  const totalLucro = totalReceitas - (totalDespesas + totalComissoes);
+  // Calcula totais do ANO SELECIONADO para os cards
+  const yearTotalReceitas = displayMonths.reduce((sum, m) => sum + (matrix.receitas.totalByMonth[m] || 0), 0);
+  const yearTotalDespesas = displayMonths.reduce((sum, m) => sum + (matrix.despesas.totalByMonth[m] || 0), 0);
+  const yearTotalComissoes = displayMonths.reduce((sum, m) => sum + (matrix.comissoes.totalByMonth[m] || 0), 0);
+  const yearTotalLucro = yearTotalReceitas - (yearTotalDespesas + yearTotalComissoes);
 
   return (
     <div className="space-y-6">
-      {/* KPIs */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card className="bg-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-emerald-500">{formatCurrency(totalReceitas)}</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Despesas & Comissões</CardTitle>
-            <TrendingDown className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-500">{formatCurrency(totalDespesas + totalComissoes)}</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Lucro Líquido</CardTitle>
-            <DollarSign className="h-4 w-4 text-[#E8BD27]" />
-          </CardHeader>
-          <CardContent>
-            <div className={cn("text-2xl font-bold", totalLucro >= 0 ? "text-[#E8BD27]" : "text-red-500")}>
-              {formatCurrency(totalLucro)}
-            </div>
-          </CardContent>
-        </Card>
+      {/* HEADER E FILTROS */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* KPI CARDS (Resumo do Ano) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full md:w-auto flex-1">
+          <Card className="bg-card border-border/50 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase font-bold">Receita ({selectedYear})</p>
+                <p className="text-lg font-bold text-emerald-500">{formatCurrency(yearTotalReceitas)}</p>
+              </div>
+              <TrendingUp className="h-4 w-4 text-emerald-500 opacity-50" />
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border/50 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase font-bold">Despesas ({selectedYear})</p>
+                <p className="text-lg font-bold text-red-500">
+                  {formatCurrency(yearTotalDespesas + yearTotalComissoes)}
+                </p>
+              </div>
+              <TrendingDown className="h-4 w-4 text-red-500 opacity-50" />
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border/50 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase font-bold">Resultado ({selectedYear})</p>
+                <p className={cn("text-lg font-bold", yearTotalLucro >= 0 ? "text-[#E8BD27]" : "text-red-500")}>
+                  {formatCurrency(yearTotalLucro)}
+                </p>
+              </div>
+              <DollarSign className="h-4 w-4 text-[#E8BD27] opacity-50" />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* FILTRO DE ANO */}
+        <div className="w-full md:w-[180px] flex-shrink-0">
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="w-full">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <SelectValue placeholder="Selecione o Ano" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              {availableYears.map((year) => (
+                <SelectItem key={year} value={year}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* MATRIZ COM ANÁLISE HORIZONTAL */}
-      <Card className="border-border/50 bg-card overflow-hidden">
-        <CardHeader>
-          <CardTitle>DRE Gerencial - Análise Horizontal</CardTitle>
+      <Card className="border-border/50 bg-card overflow-hidden shadow-md">
+        <CardHeader className="pb-2 border-b border-border/50 bg-muted/20">
+          <CardTitle className="text-lg flex items-center gap-2">Matriz DRE - {selectedYear}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
-                  <TableHead className="w-[200px] font-bold text-primary pl-6 sticky left-0 bg-muted/30 z-10">
+                  <TableHead className="w-[200px] font-bold text-primary pl-6 sticky left-0 bg-muted/30 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                     Item
                   </TableHead>
-                  {months.map((m, i) => (
+                  {displayMonths.map((m) => (
                     <>
-                      <TableHead key={m} className="text-right min-w-[100px] font-semibold">
+                      <TableHead key={m} className="text-right min-w-[110px] font-semibold">
                         {getMonthLabel(m)}
                       </TableHead>
-                      {i > 0 && (
-                        <TableHead
-                          key={`${m}-var`}
-                          className="w-[60px] text-center text-[10px] text-muted-foreground p-1"
-                        >
-                          AH%
-                        </TableHead>
-                      )}
+                      <TableHead
+                        key={`${m}-var`}
+                        className="w-[50px] text-center text-[10px] text-muted-foreground p-1"
+                      >
+                        AH%
+                      </TableHead>
                     </>
                   ))}
-                  <TableHead className="text-right font-bold pr-6">TOTAL</TableHead>
+                  <TableHead className="text-right font-bold pr-6 min-w-[120px] bg-muted/10">
+                    TOTAL {selectedYear}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {/* --- RECEITAS --- */}
-                <TableRow className="cursor-pointer group" onClick={() => toggleRow("receitas")}>
-                  <TableCell className="font-bold text-emerald-500 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10">
+                <TableRow
+                  className="cursor-pointer group hover:bg-muted/50 transition-colors"
+                  onClick={() => toggleRow("receitas")}
+                >
+                  <TableCell className="font-bold text-emerald-500 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/50 transition-colors">
                     {expandedRows.receitas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{" "}
                     Receitas
                   </TableCell>
-                  {months.map((m, i) => (
+                  {displayMonths.map((m) => (
                     <>
                       <TableCell key={m} className="text-right font-bold text-emerald-500/80">
                         {formatCurrency(matrix.receitas.totalByMonth[m] || 0)}
                       </TableCell>
-                      {i > 0 && (
-                        <VariationCell
-                          current={matrix.receitas.totalByMonth[m] || 0}
-                          previous={matrix.receitas.totalByMonth[months[i - 1]] || 0}
-                          type="good_is_up"
-                        />
-                      )}
+                      <VariationCell
+                        current={matrix.receitas.totalByMonth[m] || 0}
+                        monthKey={m}
+                        dataSource={matrix.receitas.totalByMonth}
+                        type="good_is_up"
+                      />
                     </>
                   ))}
-                  <TableCell className="text-right font-bold text-emerald-500 pr-6">
-                    {formatCurrency(totalReceitas)}
+                  <TableCell className="text-right font-bold text-emerald-500 pr-6 bg-muted/10">
+                    {formatCurrency(yearTotalReceitas)}
                   </TableCell>
                 </TableRow>
 
                 {expandedRows.receitas &&
                   Object.keys(matrix.receitas.items).map((title) => (
-                    <TableRow key={title} className="bg-muted/5 text-sm">
-                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
+                    <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
+                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-emerald-500/50" /> {title}
                       </TableCell>
-                      {months.map((m, i) => (
+                      {displayMonths.map((m) => (
                         <>
                           <TableCell key={m} className="text-right">
                             {matrix.receitas.items[title][m] ? (
@@ -314,24 +380,23 @@ export function FinancialSummary() {
                               <span className="text-muted-foreground/20">-</span>
                             )}
                           </TableCell>
-                          {i > 0 && (
-                            <VariationCell
-                              current={matrix.receitas.items[title][m]?.amount || 0}
-                              previous={matrix.receitas.items[title][months[i - 1]]?.amount || 0}
-                              type="good_is_up"
-                            />
-                          )}
+                          <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
                         </>
                       ))}
-                      <TableCell className="text-right font-medium pr-6">
-                        {formatCurrency(Object.values(matrix.receitas.items[title]).reduce((s, x) => s + x.amount, 0))}
+                      <TableCell className="text-right font-medium pr-6 bg-muted/10">
+                        {formatCurrency(
+                          displayMonths.reduce((sum, m) => sum + (matrix.receitas.items[title][m]?.amount || 0), 0),
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
 
                 {/* --- COMISSÕES --- */}
-                <TableRow className="cursor-pointer group" onClick={() => toggleRow("comissoes")}>
-                  <TableCell className="font-bold text-muted-foreground flex items-center gap-2 pl-4 sticky left-0 bg-card z-10">
+                <TableRow
+                  className="cursor-pointer group hover:bg-muted/50 transition-colors"
+                  onClick={() => toggleRow("comissoes")}
+                >
+                  <TableCell className="font-bold text-muted-foreground flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/50 transition-colors">
                     {expandedRows.comissoes ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
@@ -339,32 +404,31 @@ export function FinancialSummary() {
                     )}{" "}
                     (-) Comissões
                   </TableCell>
-                  {months.map((m, i) => (
+                  {displayMonths.map((m) => (
                     <>
                       <TableCell key={m} className="text-right font-bold text-muted-foreground">
                         {formatCurrency(matrix.comissoes.totalByMonth[m] || 0)}
                       </TableCell>
-                      {i > 0 && (
-                        <VariationCell
-                          current={matrix.comissoes.totalByMonth[m] || 0}
-                          previous={matrix.comissoes.totalByMonth[months[i - 1]] || 0}
-                          type="good_is_down"
-                        />
-                      )}
+                      <VariationCell
+                        current={matrix.comissoes.totalByMonth[m] || 0}
+                        monthKey={m}
+                        dataSource={matrix.comissoes.totalByMonth}
+                        type="good_is_down"
+                      />
                     </>
                   ))}
-                  <TableCell className="text-right font-bold text-muted-foreground pr-6">
-                    {formatCurrency(totalComissoes)}
+                  <TableCell className="text-right font-bold text-muted-foreground pr-6 bg-muted/10">
+                    {formatCurrency(yearTotalComissoes)}
                   </TableCell>
                 </TableRow>
 
                 {expandedRows.comissoes &&
                   Object.keys(matrix.comissoes.items).map((title) => (
-                    <TableRow key={title} className="bg-muted/5 text-sm">
-                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
+                    <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
+                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-muted-foreground/50" /> {title}
                       </TableCell>
-                      {months.map((m, i) => (
+                      {displayMonths.map((m) => (
                         <>
                           <TableCell key={m} className="text-right">
                             {matrix.comissoes.items[title][m] ? (
@@ -376,53 +440,51 @@ export function FinancialSummary() {
                               <span className="text-muted-foreground/20">-</span>
                             )}
                           </TableCell>
-                          {i > 0 && (
-                            <VariationCell
-                              current={matrix.comissoes.items[title][m]?.amount || 0}
-                              previous={matrix.comissoes.items[title][months[i - 1]]?.amount || 0}
-                              type="good_is_down"
-                            />
-                          )}
+                          <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
                         </>
                       ))}
-                      <TableCell className="text-right font-medium pr-6">
-                        {formatCurrency(Object.values(matrix.comissoes.items[title]).reduce((s, x) => s + x.amount, 0))}
+                      <TableCell className="text-right font-medium pr-6 bg-muted/10">
+                        {formatCurrency(
+                          displayMonths.reduce((sum, m) => sum + (matrix.comissoes.items[title][m]?.amount || 0), 0),
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
 
                 {/* --- DESPESAS --- */}
-                <TableRow className="cursor-pointer group" onClick={() => toggleRow("despesas")}>
-                  <TableCell className="font-bold text-red-400 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10">
+                <TableRow
+                  className="cursor-pointer group hover:bg-muted/50 transition-colors"
+                  onClick={() => toggleRow("despesas")}
+                >
+                  <TableCell className="font-bold text-red-400 flex items-center gap-2 pl-4 sticky left-0 bg-card z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/50 transition-colors">
                     {expandedRows.despesas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{" "}
                     (-) Despesas
                   </TableCell>
-                  {months.map((m, i) => (
+                  {displayMonths.map((m) => (
                     <>
                       <TableCell key={m} className="text-right font-bold text-red-400/80">
                         {formatCurrency(matrix.despesas.totalByMonth[m] || 0)}
                       </TableCell>
-                      {i > 0 && (
-                        <VariationCell
-                          current={matrix.despesas.totalByMonth[m] || 0}
-                          previous={matrix.despesas.totalByMonth[months[i - 1]] || 0}
-                          type="good_is_down"
-                        />
-                      )}
+                      <VariationCell
+                        current={matrix.despesas.totalByMonth[m] || 0}
+                        monthKey={m}
+                        dataSource={matrix.despesas.totalByMonth}
+                        type="good_is_down"
+                      />
                     </>
                   ))}
-                  <TableCell className="text-right font-bold text-red-400 pr-6">
-                    {formatCurrency(totalDespesas)}
+                  <TableCell className="text-right font-bold text-red-400 pr-6 bg-muted/10">
+                    {formatCurrency(yearTotalDespesas)}
                   </TableCell>
                 </TableRow>
 
                 {expandedRows.despesas &&
                   Object.keys(matrix.despesas.items).map((title) => (
-                    <TableRow key={title} className="bg-muted/5 text-sm">
-                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10">
+                    <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
+                      <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-red-400/50" /> {title}
                       </TableCell>
-                      {months.map((m, i) => (
+                      {displayMonths.map((m) => (
                         <>
                           <TableCell key={m} className="text-right">
                             {matrix.despesas.items[title][m] ? (
@@ -434,27 +496,23 @@ export function FinancialSummary() {
                               <span className="text-muted-foreground/20">-</span>
                             )}
                           </TableCell>
-                          {i > 0 && (
-                            <VariationCell
-                              current={matrix.despesas.items[title][m]?.amount || 0}
-                              previous={matrix.despesas.items[title][months[i - 1]]?.amount || 0}
-                              type="good_is_down"
-                            />
-                          )}
+                          <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
                         </>
                       ))}
-                      <TableCell className="text-right font-medium pr-6">
-                        {formatCurrency(Object.values(matrix.despesas.items[title]).reduce((s, x) => s + x.amount, 0))}
+                      <TableCell className="text-right font-medium pr-6 bg-muted/10">
+                        {formatCurrency(
+                          displayMonths.reduce((sum, m) => sum + (matrix.despesas.items[title][m]?.amount || 0), 0),
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
 
                 {/* --- RESULTADO --- */}
                 <TableRow className="bg-muted/10 border-t-2 border-border/50">
-                  <TableCell className="font-bold text-[#E8BD27] pl-4 sticky left-0 bg-muted/10 z-10">
+                  <TableCell className="font-bold text-[#E8BD27] pl-4 sticky left-0 bg-muted/10 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                     (=) RESULTADO
                   </TableCell>
-                  {months.map((m, i) => (
+                  {displayMonths.map((m) => (
                     <>
                       <TableCell
                         key={m}
@@ -465,22 +523,16 @@ export function FinancialSummary() {
                       >
                         {formatCurrency(totals[m] || 0)}
                       </TableCell>
-                      {i > 0 && (
-                        <VariationCell
-                          current={totals[m] || 0}
-                          previous={totals[months[i - 1]] || 0}
-                          type="good_is_up"
-                        />
-                      )}
+                      <VariationCell current={totals[m] || 0} monthKey={m} dataSource={totals} type="good_is_up" />
                     </>
                   ))}
                   <TableCell
                     className={cn(
-                      "text-right font-bold text-lg pr-6",
-                      totalLucro >= 0 ? "text-[#E8BD27]" : "text-red-500",
+                      "text-right font-bold text-lg pr-6 bg-muted/20",
+                      yearTotalLucro >= 0 ? "text-[#E8BD27]" : "text-red-500",
                     )}
                   >
-                    {formatCurrency(totalLucro)}
+                    {formatCurrency(yearTotalLucro)}
                   </TableCell>
                 </TableRow>
               </TableBody>
