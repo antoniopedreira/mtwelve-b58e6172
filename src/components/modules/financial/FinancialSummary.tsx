@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { format, startOfMonth, subMonths, parseISO } from "date-fns";
+import { format, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Loader2,
@@ -18,7 +18,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface FinancialRecord {
@@ -156,10 +155,10 @@ export function FinancialSummary() {
     return label.charAt(0).toUpperCase() + label.slice(1);
   };
 
-  // Helper para buscar o mês anterior matematicamente (permite calcular Jan comparado com Dez do ano anterior)
+  // Helper para buscar o mês anterior matematicamente
   const getPrevMonthKey = (currentMonthKey: string) => {
     const [year, month] = currentMonthKey.split("-");
-    const date = new Date(Number(year), Number(month) - 1, 1); // Dia 1 do mês atual
+    const date = new Date(Number(year), Number(month) - 1, 1);
     const prevDate = subMonths(date, 1);
     return format(prevDate, "yyyy-MM");
   };
@@ -169,7 +168,18 @@ export function FinancialSummary() {
     return ((current - previous) / previous) * 100;
   };
 
-  // Componente de Variação (Célula AH) - Agora busca na Matrix Global
+  // Filtra itens que têm valor > 0 em pelo menos um mês do ano selecionado
+  const getActiveItems = (items: Record<string, any>) => {
+    return Object.keys(items).filter((title) => {
+      // Verifica se existe algum mês visível com valor != 0
+      return displayMonths.some((m) => {
+        const cell = items[title][m];
+        return cell && Math.abs(cell.amount) > 0.001;
+      });
+    });
+  };
+
+  // Componente de Variação (Célula AH)
   const VariationCell = ({
     current,
     monthKey,
@@ -178,7 +188,7 @@ export function FinancialSummary() {
   }: {
     current: number;
     monthKey: string;
-    dataSource: Record<string, number> | undefined; // Passamos o objeto de totais completo
+    dataSource: Record<string, number> | undefined;
     type: "good_is_up" | "good_is_down";
   }) => {
     const prevMonthKey = getPrevMonthKey(monthKey);
@@ -329,9 +339,7 @@ export function FinancialSummary() {
                       </TableHead>
                     </>
                   ))}
-                  <TableHead className="text-right font-bold pr-6 min-w-[120px] bg-muted/10">
-                    TOTAL {selectedYear}
-                  </TableHead>
+                  {/* REMOVIDO: Coluna de Total do Ano */}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -357,13 +365,10 @@ export function FinancialSummary() {
                       />
                     </>
                   ))}
-                  <TableCell className="text-right font-bold text-emerald-500 pr-6 bg-muted/10">
-                    {formatCurrency(yearTotalReceitas)}
-                  </TableCell>
                 </TableRow>
 
                 {expandedRows.receitas &&
-                  Object.keys(matrix.receitas.items).map((title) => (
+                  getActiveItems(matrix.receitas.items).map((title) => (
                     <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-emerald-500/50" /> {title}
@@ -383,11 +388,6 @@ export function FinancialSummary() {
                           <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
                         </>
                       ))}
-                      <TableCell className="text-right font-medium pr-6 bg-muted/10">
-                        {formatCurrency(
-                          displayMonths.reduce((sum, m) => sum + (matrix.receitas.items[title][m]?.amount || 0), 0),
-                        )}
-                      </TableCell>
                     </TableRow>
                   ))}
 
@@ -417,13 +417,10 @@ export function FinancialSummary() {
                       />
                     </>
                   ))}
-                  <TableCell className="text-right font-bold text-muted-foreground pr-6 bg-muted/10">
-                    {formatCurrency(yearTotalComissoes)}
-                  </TableCell>
                 </TableRow>
 
                 {expandedRows.comissoes &&
-                  Object.keys(matrix.comissoes.items).map((title) => (
+                  getActiveItems(matrix.comissoes.items).map((title) => (
                     <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-muted-foreground/50" /> {title}
@@ -443,11 +440,6 @@ export function FinancialSummary() {
                           <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
                         </>
                       ))}
-                      <TableCell className="text-right font-medium pr-6 bg-muted/10">
-                        {formatCurrency(
-                          displayMonths.reduce((sum, m) => sum + (matrix.comissoes.items[title][m]?.amount || 0), 0),
-                        )}
-                      </TableCell>
                     </TableRow>
                   ))}
 
@@ -473,13 +465,10 @@ export function FinancialSummary() {
                       />
                     </>
                   ))}
-                  <TableCell className="text-right font-bold text-red-400 pr-6 bg-muted/10">
-                    {formatCurrency(yearTotalDespesas)}
-                  </TableCell>
                 </TableRow>
 
                 {expandedRows.despesas &&
-                  Object.keys(matrix.despesas.items).map((title) => (
+                  getActiveItems(matrix.despesas.items).map((title) => (
                     <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-red-400/50" /> {title}
@@ -499,11 +488,6 @@ export function FinancialSummary() {
                           <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
                         </>
                       ))}
-                      <TableCell className="text-right font-medium pr-6 bg-muted/10">
-                        {formatCurrency(
-                          displayMonths.reduce((sum, m) => sum + (matrix.despesas.items[title][m]?.amount || 0), 0),
-                        )}
-                      </TableCell>
                     </TableRow>
                   ))}
 
@@ -526,14 +510,6 @@ export function FinancialSummary() {
                       <VariationCell current={totals[m] || 0} monthKey={m} dataSource={totals} type="good_is_up" />
                     </>
                   ))}
-                  <TableCell
-                    className={cn(
-                      "text-right font-bold text-lg pr-6 bg-muted/20",
-                      yearTotalLucro >= 0 ? "text-[#E8BD27]" : "text-red-500",
-                    )}
-                  >
-                    {formatCurrency(yearTotalLucro)}
-                  </TableCell>
                 </TableRow>
               </TableBody>
             </Table>
