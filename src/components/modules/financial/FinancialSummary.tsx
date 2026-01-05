@@ -13,13 +13,16 @@ import {
   AlertCircle,
   Minus,
   Filter,
+  Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
+// --- TIPOS ---
 interface FinancialRecord {
   id: string;
   title: string;
@@ -28,6 +31,7 @@ interface FinancialRecord {
   amount: number;
   date: string;
   status: string | null;
+  contract_id: string | null;
 }
 
 type MatrixData = {
@@ -39,12 +43,14 @@ type MatrixData = {
         [month: string]: {
           amount: number;
           status: string[];
+          records: FinancialRecord[]; // Armazena os registros para o modal
         };
       }
     >;
   };
 };
 
+// --- COMPONENTE PRINCIPAL ---
 export function FinancialSummary() {
   const [records, setRecords] = useState<FinancialRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,6 +63,14 @@ export function FinancialSummary() {
     comissoes: false,
   });
 
+  // Estado do Modal de Detalhes
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedCellData, setSelectedCellData] = useState<{
+    title: string;
+    month: string;
+    records: FinancialRecord[];
+  } | null>(null);
+
   useEffect(() => {
     fetchFinancialData();
   }, []);
@@ -68,7 +82,6 @@ export function FinancialSummary() {
       if (error) throw error;
       setRecords(data as FinancialRecord[]);
 
-      // Se houver dados, tenta selecionar o ano mais recente automaticamente se o atual não tiver dados
       if (data && data.length > 0) {
         const years = Array.from(new Set(data.map((d: any) => d.date.substring(0, 4))))
           .sort()
@@ -84,7 +97,7 @@ export function FinancialSummary() {
     }
   }
 
-  // --- PROCESSAMENTO ---
+  // --- PROCESSAMENTO DA MATRIZ ---
   const { matrix, availableYears, displayMonths, totals } = useMemo(() => {
     const matrix: MatrixData = {
       receitas: { totalByMonth: {}, items: {} },
@@ -97,7 +110,6 @@ export function FinancialSummary() {
     const grandTotals: Record<string, number> = {};
 
     records.forEach((record) => {
-      // Ajuste de fuso: T12:00:00 para garantir dia correto
       const dateStr = record.date.includes("T") ? record.date : `${record.date}T12:00:00`;
       const dateObj = new Date(dateStr);
 
@@ -117,12 +129,14 @@ export function FinancialSummary() {
       const title = record.title || "Sem descrição";
       if (!catGroup.items[title]) catGroup.items[title] = {};
       if (!catGroup.items[title][monthKey]) {
-        catGroup.items[title][monthKey] = { amount: 0, status: [] };
+        catGroup.items[title][monthKey] = { amount: 0, status: [], records: [] };
       }
 
       const val = Number(record.amount);
       catGroup.totalByMonth[monthKey] += val;
       catGroup.items[title][monthKey].amount += val;
+      catGroup.items[title][monthKey].records.push(record); // Guarda o registro bruto
+
       if (record.status) {
         catGroup.items[title][monthKey].status.push(record.status);
       }
@@ -134,8 +148,6 @@ export function FinancialSummary() {
 
     const allMonths = Array.from(uniqueMonths).sort();
     const sortedYears = Array.from(uniqueYears).sort().reverse();
-
-    // Filtra os meses para mostrar apenas o ano selecionado
     const displayMonths = allMonths.filter((m) => m.startsWith(selectedYear));
 
     return { matrix, availableYears: sortedYears, displayMonths, totals: grandTotals };
@@ -145,17 +157,28 @@ export function FinancialSummary() {
     setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleCellClick = (category: string, title: string, month: string, cellData: any) => {
+    if (category === "comissoes" && cellData && cellData.amount > 0) {
+      setSelectedCellData({
+        title, // ex: "Comissão: João"
+        month, // ex: "2024-01"
+        records: cellData.records,
+      });
+      setDetailModalOpen(true);
+    }
+  };
+
+  // --- HELPERS ---
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
   const getMonthLabel = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
     const date = new Date(Number(year), Number(month) - 1, 1);
-    const label = format(date, "MMM", { locale: ptBR }); // Ex: Jan
+    const label = format(date, "MMM", { locale: ptBR });
     return label.charAt(0).toUpperCase() + label.slice(1);
   };
 
-  // Helper para buscar o mês anterior matematicamente
   const getPrevMonthKey = (currentMonthKey: string) => {
     const [year, month] = currentMonthKey.split("-");
     const date = new Date(Number(year), Number(month) - 1, 1);
@@ -168,10 +191,8 @@ export function FinancialSummary() {
     return ((current - previous) / previous) * 100;
   };
 
-  // Filtra itens que têm valor > 0 em pelo menos um mês do ano selecionado
   const getActiveItems = (items: Record<string, any>) => {
     return Object.keys(items).filter((title) => {
-      // Verifica se existe algum mês visível com valor != 0
       return displayMonths.some((m) => {
         const cell = items[title][m];
         return cell && Math.abs(cell.amount) > 0.001;
@@ -179,7 +200,7 @@ export function FinancialSummary() {
     });
   };
 
-  // Componente de Variação (Célula AH)
+  // --- SUB-COMPONENTES ---
   const VariationCell = ({
     current,
     monthKey,
@@ -196,7 +217,6 @@ export function FinancialSummary() {
 
     if (!previous)
       return <TableCell className="w-[50px] p-1 text-center text-[10px] text-muted-foreground">-</TableCell>;
-
     const variation = calculateVariation(current, previous);
     if (variation === 0)
       return (
@@ -205,12 +225,14 @@ export function FinancialSummary() {
         </TableCell>
       );
 
-    let colorClass = "text-muted-foreground";
-    if (type === "good_is_up") {
-      colorClass = variation > 0 ? "text-emerald-500 font-bold" : "text-red-400 font-bold";
-    } else {
-      colorClass = variation > 0 ? "text-red-400 font-bold" : "text-emerald-500 font-bold";
-    }
+    const colorClass =
+      type === "good_is_up"
+        ? variation > 0
+          ? "text-emerald-500 font-bold"
+          : "text-red-400 font-bold"
+        : variation > 0
+          ? "text-red-400 font-bold"
+          : "text-emerald-500 font-bold";
 
     return (
       <TableCell className="w-[50px] p-1 text-center border-l border-dashed border-border/30 bg-muted/5">
@@ -226,7 +248,6 @@ export function FinancialSummary() {
     if (!statuses || statuses.length === 0) return null;
     const allPaid = statuses.every((s) => s === "paid");
     const hasPending = statuses.some((s) => s === "pending");
-
     if (allPaid) return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
     if (hasPending) return <Clock className="h-3 w-3 text-yellow-500" />;
     return <AlertCircle className="h-3 w-3 text-red-400" />;
@@ -248,7 +269,6 @@ export function FinancialSummary() {
       </Card>
     );
 
-  // Calcula totais do ANO SELECIONADO para os cards
   const yearTotalReceitas = displayMonths.reduce((sum, m) => sum + (matrix.receitas.totalByMonth[m] || 0), 0);
   const yearTotalDespesas = displayMonths.reduce((sum, m) => sum + (matrix.despesas.totalByMonth[m] || 0), 0);
   const yearTotalComissoes = displayMonths.reduce((sum, m) => sum + (matrix.comissoes.totalByMonth[m] || 0), 0);
@@ -258,8 +278,8 @@ export function FinancialSummary() {
     <div className="space-y-6">
       {/* HEADER E FILTROS */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* KPI CARDS (Resumo do Ano) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full md:w-auto flex-1">
+          {/* CARDS */}
           <Card className="bg-card border-border/50 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
@@ -293,7 +313,6 @@ export function FinancialSummary() {
           </Card>
         </div>
 
-        {/* FILTRO DE ANO */}
         <div className="w-full md:w-[180px] flex-shrink-0">
           <Select value={selectedYear} onValueChange={setSelectedYear}>
             <SelectTrigger className="w-full">
@@ -313,7 +332,7 @@ export function FinancialSummary() {
         </div>
       </div>
 
-      {/* MATRIZ COM ANÁLISE HORIZONTAL */}
+      {/* MATRIZ DRE */}
       <Card className="border-border/50 bg-card overflow-hidden shadow-md">
         <CardHeader className="pb-2 border-b border-border/50 bg-muted/20">
           <CardTitle className="text-lg flex items-center gap-2">Matriz DRE - {selectedYear}</CardTitle>
@@ -339,11 +358,10 @@ export function FinancialSummary() {
                       </TableHead>
                     </>
                   ))}
-                  {/* REMOVIDO: Coluna de Total do Ano */}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* --- RECEITAS --- */}
+                {/* RECEITAS */}
                 <TableRow
                   className="cursor-pointer group hover:bg-muted/50 transition-colors"
                   onClick={() => toggleRow("receitas")}
@@ -366,7 +384,6 @@ export function FinancialSummary() {
                     </>
                   ))}
                 </TableRow>
-
                 {expandedRows.receitas &&
                   getActiveItems(matrix.receitas.items).map((title) => (
                     <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
@@ -391,7 +408,7 @@ export function FinancialSummary() {
                     </TableRow>
                   ))}
 
-                {/* --- COMISSÕES --- */}
+                {/* COMISSÕES */}
                 <TableRow
                   className="cursor-pointer group hover:bg-muted/50 transition-colors"
                   onClick={() => toggleRow("comissoes")}
@@ -418,32 +435,43 @@ export function FinancialSummary() {
                     </>
                   ))}
                 </TableRow>
-
                 {expandedRows.comissoes &&
                   getActiveItems(matrix.comissoes.items).map((title) => (
                     <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
                       <TableCell className="pl-10 text-muted-foreground flex items-center gap-2 sticky left-0 bg-muted/5 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-muted/10">
                         <div className="w-1 h-1 rounded-full bg-muted-foreground/50" /> {title}
                       </TableCell>
-                      {displayMonths.map((m) => (
-                        <>
-                          <TableCell key={m} className="text-right">
-                            {matrix.comissoes.items[title][m] ? (
-                              <div className="flex items-center justify-end gap-2">
-                                <span>{formatCurrency(matrix.comissoes.items[title][m].amount)}</span>
-                                <StatusIcon statuses={matrix.comissoes.items[title][m].status} />
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground/20">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
-                        </>
-                      ))}
+                      {displayMonths.map((m) => {
+                        const cellData = matrix.comissoes.items[title][m];
+                        return (
+                          <>
+                            <TableCell
+                              key={m}
+                              className={cn(
+                                "text-right",
+                                cellData && cellData.amount > 0
+                                  ? "cursor-pointer hover:bg-muted/20 hover:text-primary underline decoration-dashed underline-offset-2"
+                                  : "",
+                              )}
+                              onClick={() => handleCellClick("comissoes", title, m, cellData)}
+                            >
+                              {cellData ? (
+                                <div className="flex items-center justify-end gap-2">
+                                  <span>{formatCurrency(cellData.amount)}</span>
+                                  <StatusIcon statuses={cellData.status} />
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground/20">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="border-l border-dashed border-border/30 bg-muted/5"></TableCell>
+                          </>
+                        );
+                      })}
                     </TableRow>
                   ))}
 
-                {/* --- DESPESAS --- */}
+                {/* DESPESAS */}
                 <TableRow
                   className="cursor-pointer group hover:bg-muted/50 transition-colors"
                   onClick={() => toggleRow("despesas")}
@@ -466,7 +494,6 @@ export function FinancialSummary() {
                     </>
                   ))}
                 </TableRow>
-
                 {expandedRows.despesas &&
                   getActiveItems(matrix.despesas.items).map((title) => (
                     <TableRow key={title} className="bg-muted/5 text-sm hover:bg-muted/10 transition-colors">
@@ -491,7 +518,7 @@ export function FinancialSummary() {
                     </TableRow>
                   ))}
 
-                {/* --- RESULTADO --- */}
+                {/* RESULTADO */}
                 <TableRow className="bg-muted/10 border-t-2 border-border/50">
                   <TableCell className="font-bold text-[#E8BD27] pl-4 sticky left-0 bg-muted/10 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                     (=) RESULTADO
@@ -516,6 +543,121 @@ export function FinancialSummary() {
           </div>
         </CardContent>
       </Card>
+
+      {/* MODAL DE DETALHES DA COMISSÃO */}
+      {detailModalOpen && selectedCellData && (
+        <CommissionDetailDialog
+          open={detailModalOpen}
+          onOpenChange={setDetailModalOpen}
+          data={selectedCellData.records}
+          employeeName={selectedCellData.title.replace("Comissão: ", "")}
+          monthLabel={getMonthLabel(selectedCellData.month)}
+        />
+      )}
     </div>
+  );
+}
+
+// --- MODAL DE DETALHES ---
+function CommissionDetailDialog({
+  open,
+  onOpenChange,
+  data,
+  employeeName,
+  monthLabel,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  data: FinancialRecord[];
+  employeeName: string;
+  monthLabel: string;
+}) {
+  const [details, setDetails] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDetails() {
+      if (!data || data.length === 0) return;
+
+      const ids = data.map((r) => r.id.split("_")[0]); // Limpa IDs compostos se houver
+
+      try {
+        const { data: commissions, error } = await supabase
+          .from("commissions")
+          .select(
+            `
+            value,
+            percentage,
+            installments (
+              value
+            ),
+            contracts (
+              clients (name)
+            )
+          `,
+          )
+          .in("id", ids);
+
+        if (error) throw error;
+        setDetails(commissions || []);
+      } catch (err) {
+        console.error("Erro ao buscar detalhes da comissão:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDetails();
+  }, [data]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg bg-card border-border">
+        <DialogHeader>
+          <DialogTitle>Detalhamento de Comissões</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            {employeeName} - {monthLabel}
+          </p>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="animate-spin" />
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fonte (Cliente)</TableHead>
+                <TableHead className="text-right">Parcela</TableHead>
+                <TableHead className="text-right">Comissão</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {details.map((item, i) => (
+                <TableRow key={i}>
+                  <TableCell className="font-medium">{item.contracts?.clients?.name || "N/A"}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                      item.installments?.value || 0,
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-emerald-500">
+                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.value || 0)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {details.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-4">
+                    Nenhum detalhe encontrado.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
