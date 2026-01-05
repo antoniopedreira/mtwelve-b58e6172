@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { checkAndCompleteContract } from "@/services/contractService";
 
 interface ContractDetailDialogProps {
   contractId: string | null;
@@ -96,7 +97,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
     }
   }
 
-  // Agrupamento de Comissões por Mês
   const commissionsGroups = useMemo(() => {
     const groupsMap = new Map<string, { label: string; dateVal: number; items: any[] }>();
 
@@ -124,6 +124,10 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
   const quickPayInstallment = async (id: string) => {
     try {
       await supabase.from("installments").update({ status: "paid" }).eq("id", id);
+
+      // Verifica se o contrato foi concluído
+      await checkAndCompleteContract(contractId!);
+
       toast.success("Parcela recebida!");
       fetchContractDetails();
       if (onContractUpdated) onContractUpdated();
@@ -135,6 +139,10 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
   const quickPayCommission = async (id: string) => {
     try {
       await supabase.from("commissions").update({ status: "paid" }).eq("id", id);
+
+      // Verifica se o contrato foi concluído
+      await checkAndCompleteContract(contractId!);
+
       toast.success("Comissão paga!");
       fetchContractDetails();
       if (onContractUpdated) onContractUpdated();
@@ -156,7 +164,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
 
   const saveInstallment = async (id: string) => {
     try {
-      // 1. Salva Parcela (Valor e Taxa)
       await supabase
         .from("installments")
         .update({
@@ -167,7 +174,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
         })
         .eq("id", id);
 
-      // 2. Recalcula Comissões Vinculadas (Líquido = Valor - Taxa)
       const newVal = Number(editInstallmentForm.value);
       const newFee = Number(editInstallmentForm.transaction_fee);
       const netVal = Math.max(0, newVal - newFee);
@@ -184,12 +190,14 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
         }
       }
 
-      // 3. Atualiza Total do Contrato
       const { data: all } = await supabase.from("installments").select("value").eq("contract_id", contractId);
       if (all) {
         const newTotal = all.reduce((acc, curr) => acc + Number(curr.value), 0);
         await supabase.from("contracts").update({ total_value: newTotal }).eq("id", contractId);
       }
+
+      // Verifica se o contrato foi concluído
+      await checkAndCompleteContract(contractId!);
 
       toast.success("Parcela e comissões atualizadas!");
       setEditingInstallmentId(null);
@@ -221,6 +229,9 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
           status: editCommissionForm.status,
         })
         .eq("id", id);
+
+      // Verifica se o contrato foi concluído
+      await checkAndCompleteContract(contractId!);
 
       toast.success("Comissão atualizada!");
       setEditingCommissionId(null);
@@ -347,7 +358,6 @@ export function ContractDetailDialog({ contractId, open, onOpenChange, onContrac
                           )}
                         </TableCell>
 
-                        {/* Coluna da Taxa - Editável */}
                         <TableCell>
                           {isEditing ? (
                             <div className="relative">
